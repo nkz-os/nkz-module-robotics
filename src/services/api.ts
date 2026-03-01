@@ -79,35 +79,24 @@ export interface DetectedTree {
 
 class LidarApiClient {
     private baseUrl: string;
-    private getToken: () => string | null;
 
     constructor() {
-        // Base URL from environment or default
         this.baseUrl = '/api/lidar';
-        this.getToken = () => {
-            // Try to get token from global context (injected by host)
-            const auth = (window as any).__nekazariAuth;
-            return auth?.token || null;
-        };
     }
 
     private async request<T>(
         endpoint: string,
         options: RequestInit = {}
     ): Promise<T> {
-        const token = this.getToken();
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
             ...(options.headers || {}),
         };
 
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
         const response = await fetch(`${this.baseUrl}${endpoint}`, {
             ...options,
             headers,
+            credentials: 'include',
         });
 
         if (!response.ok) {

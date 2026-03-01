@@ -106,15 +106,9 @@ const LidarLayerControl: React.FC = () => {
       }
       formData.append('config', JSON.stringify(processingConfig));
 
-      const auth = (window as any).__nekazariAuth;
-      const headers: HeadersInit = {};
-      if (auth?.token) {
-        headers['Authorization'] = `Bearer ${auth.token}`;
-      }
-
       const response = await fetch('/api/lidar/upload', {
         method: 'POST',
-        headers,
+        credentials: 'include',
         body: formData,
       });
 
