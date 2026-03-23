@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/k8-benetis/nkz-module-robotics/robotics-backend:latest
+          image: ghcr.io/nkz-os/nkz-module-robotics/robotics-backend:latest
           imagePullPolicy: Always
           ports:
             - name: http
@@ -138,7 +138,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/k8-benetis/nkz-module-robotics/robotics-backend:latest
+          image: ghcr.io/nkz-os/nkz-module-robotics/robotics-backend:latest
           imagePullPolicy: Always
           command:
             [
