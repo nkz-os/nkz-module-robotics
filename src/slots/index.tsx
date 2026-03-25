@@ -7,6 +7,7 @@
  * This ensures proper provider wrapping and error handling by the host.
  */
 
+import '../i18n';
 import React from 'react';
 
 // =============================================================================

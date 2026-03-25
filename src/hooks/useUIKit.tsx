@@ -10,10 +10,10 @@ export function useUIKit() {
     console.warn('UI Kit not available, using fallback');
     // Return fallback components (very basic)
     return {
-      Card: ({ children, padding, className }: any) => (
+      Card: ({ children, padding: _padding, className }: any) => (
         <div className={className}>{children}</div>
       ),
-      Button: ({ children, variant, size, onClick, disabled, className }: any) => (
+      Button: ({ children, variant: _variant, size: _size, onClick, disabled, className }: any) => (
         <button
           onClick={onClick}
           disabled={disabled}

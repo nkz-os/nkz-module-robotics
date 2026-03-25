@@ -58,7 +58,7 @@ const COLOR_RAMPS = {
 };
 
 export const LidarLayer: React.FC<LidarLayerProps> = ({ viewer }) => {
-  const { activeTilesetUrl, colorMode, showTrees } = useLidarContext();
+  const { activeTilesetUrl, colorMode } = useLidarContext();
   const tilesetRef = useRef<any>(null);
   const postProcessStagesRef = useRef<any>(null);
 

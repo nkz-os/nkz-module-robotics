@@ -1,3 +1,4 @@
+import './i18n';
 import React from 'react';
 import RoboticsCockpit from './components/RoboticsCockpit';
 import './index.css';
