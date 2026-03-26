@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Gamepad2, AlertTriangle, Battery, Signal, Wifi, Activity } from 'lucide-react';
 import { useTranslation } from '@nekazari/sdk';
+import { useHMI } from '@nekazari/ui-kit';
 
 // Types
 type DriveMode = 'ACKERMANN_FRONT' | 'ACKERMANN_DUAL' | 'CRAB' | 'DIFFERENTIAL';
@@ -10,6 +11,7 @@ const OP_MODES: OperationMode[] = ['MONITOR', 'MANUAL', 'AUTO'];
 
 const RoboticsCockpit: React.FC = () => {
     const { t } = useTranslation('robotics');
+    const { isHmiMode } = useHMI();
     const [opMode, setOpMode] = useState<OperationMode>('MONITOR');
     const [driveMode, setDriveMode] = useState<DriveMode>('ACKERMANN_FRONT');
     const [, setLastHeartbeat] = useState<number>(Date.now());
@@ -55,8 +57,8 @@ const RoboticsCockpit: React.FC = () => {
     return (
         <div className="h-screen w-full bg-slate-950 text-white flex flex-col font-sans overflow-hidden select-none">
 
-            {/* 1. Safety Header (Glassmorphism) */}
-            <header className="h-16 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 shrink-0 z-50">
+            {/* 1. Safety Header */}
+            <header className={`h-16 flex items-center justify-between px-6 shrink-0 z-50 border-b ${isHmiMode ? 'bg-black border-slate-600' : 'bg-slate-900/80 backdrop-blur-md border-slate-800'}`}>
                 <div className="flex items-center space-x-6">
                     <div className="flex items-center space-x-3">
                         <div className="relative">
@@ -99,7 +101,7 @@ const RoboticsCockpit: React.FC = () => {
                         <span>{t('cockpit.batteryPercent', { pct: 84 })}</span>
                     </div>
                     <button
-                        className="group relative bg-rose-600 hover:bg-rose-700 text-white font-black px-6 py-2 rounded shadow-[0_0_20px_rgba(225,29,72,0.4)] transition-all active:scale-95"
+                        className={`group relative font-black px-6 rounded transition-all active:scale-95 ${isHmiMode ? 'bg-red-600 hover:bg-red-700 text-white py-4 min-w-[120px] shadow-none border-2 border-red-400' : 'bg-rose-600 hover:bg-rose-700 text-white py-2 shadow-[0_0_20px_rgba(225,29,72,0.4)]'}`}
                         onClick={() => console.log("E-STOP TRIGGERED")}
                     >
                         <span className="flex items-center space-x-2">
@@ -134,11 +136,11 @@ const RoboticsCockpit: React.FC = () => {
                         </div>
 
                         {/* Telemetry data overlay */}
-                        <div className="absolute top-6 left-6 p-4 bg-slate-900/40 backdrop-blur-sm border-l-2 border-blue-500 rounded-r-lg">
-                            <div className="font-mono text-xs space-y-1 text-blue-100">
-                                <div className="flex justify-between w-32"><span>{t('cockpit.hudLinX')}</span> <span className="text-white">{`0.00 ${t('cockpit.hudLinUnit')}`}</span></div>
-                                <div className="flex justify-between w-32"><span>{t('cockpit.hudAngZ')}</span> <span className="text-white">{`0.00 ${t('cockpit.hudAngUnit')}`}</span></div>
-                                <div className="flex justify-between w-32"><span>{t('cockpit.hudHead')}</span> <span className="text-white">{t('cockpit.hudDeg', { deg: 124 })}</span></div>
+                        <div className={`absolute top-6 left-6 p-4 rounded-r-lg border-l-4 ${isHmiMode ? 'bg-black border-blue-500' : 'bg-slate-900/40 backdrop-blur-sm border-blue-500'}`}>
+                            <div className={`font-mono space-y-2 ${isHmiMode ? 'text-lg text-white' : 'text-xs text-blue-100'}`}>
+                                <div className="flex justify-between w-40"><span>{t('cockpit.hudLinX')}</span> <span className={`${isHmiMode ? 'text-green-400 font-bold' : 'text-white'}`}>{`0.00 ${t('cockpit.hudLinUnit')}`}</span></div>
+                                <div className="flex justify-between w-40"><span>{t('cockpit.hudAngZ')}</span> <span className={`${isHmiMode ? 'text-green-400 font-bold' : 'text-white'}`}>{`0.00 ${t('cockpit.hudAngUnit')}`}</span></div>
+                                <div className="flex justify-between w-40"><span>{t('cockpit.hudHead')}</span> <span className={`${isHmiMode ? 'text-green-400 font-bold' : 'text-white'}`}>{t('cockpit.hudDeg', { deg: 124 })}</span></div>
                             </div>
                         </div>
                     </>
