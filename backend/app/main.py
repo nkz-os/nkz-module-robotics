@@ -1,86 +1,55 @@
-"""
-FastAPI main application for Robotics Module.
-"""
-
+"""FastAPI app for Robotics Module."""
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
+from app.middleware.auth import extract_tenant_id
 
-from app.api import robotics
-from app.db import init_db
-
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    logger.info("Starting Robotics Module API...")
-    
-    # Initialize database tables
-    try:
-        init_db()
-        logger.info("Database tables initialized")
-    except Exception as e:
-        logger.warning(f"Database initialization warning: {e}")
-    
+    logger.info("Starting Robotics Module API v%s", settings.VERSION)
     yield
-    
-    logger.info("Shutting down Robotics Module API...")
+    logger.info("Shutting down Robotics Module API")
 
 
-# Create FastAPI app
 app = FastAPI(
-    title="Robotics Module API",
-    description="""
-    Advanced Robotics Module for Nekazari Platform.
-    
-    ## Features
-    - Zenoh Configuration Generator
-    - Robot Fleet Management
-    - Real-time Telemetry Gateway
-    """,
-    version="1.0.0",
-    lifespan=lifespan
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    lifespan=lifespan,
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
 )
 
-# Include routers
-app.include_router(robotics.router, prefix="/api/robotics", tags=["Robotics"])
+
+@app.middleware("http")
+async def tenant_middleware(request: Request, call_next):
+    if request.url.path in ("/health", "/", "/docs", "/openapi.json"):
+        return await call_next(request)
+    try:
+        request.state.tenant_id = await extract_tenant_id(request)
+    except Exception:
+        request.state.tenant_id = ""
+    return await call_next(request)
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "module": "robotics",
-        "version": "1.0.0"
-    }
+async def health():
+    return {"status": "healthy", "module": "robotics", "version": settings.VERSION}
 
 
 @app.get("/")
 async def root():
-    """Root endpoint with API info."""
-    return {
-        "module": "nkz-module-robotics",
-        "version": "1.0.0",
-        "description": "Robotics & Telemetry Module for Nekazari",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return {"module": "nkz-module-robotics", "version": settings.VERSION, "docs": "/docs"}

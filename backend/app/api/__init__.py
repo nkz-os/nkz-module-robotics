@@ -1,4 +1,1 @@
-"""
-API routers package
-"""
-
+"""API routers — fleet, telemetry, teleoperation"""
