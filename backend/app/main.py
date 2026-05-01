@@ -5,6 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.middleware.auth import extract_tenant_id
+from app.api.fleet import router as fleet_router
+from app.api.telemetry import router as telemetry_router
+from app.api.teleoperation import router as teleop_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -43,6 +46,11 @@ async def tenant_middleware(request: Request, call_next):
     except Exception:
         request.state.tenant_id = ""
     return await call_next(request)
+
+
+app.include_router(fleet_router, prefix="/api/robotics/fleet", tags=["Fleet"])
+app.include_router(telemetry_router, prefix="/api/robotics/teleop", tags=["Telemetry"])
+app.include_router(teleop_router, prefix="/api/robotics/teleop", tags=["Teleoperation"])
 
 
 @app.get("/health")
