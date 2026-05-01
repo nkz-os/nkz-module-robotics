@@ -47,6 +47,12 @@ export const roboticsApi = {
   decommissionRobot: (id: string): Promise<void> =>
     apiFetch(`/fleet/robots/${id}`, { method: 'DELETE' }),
 
+  claimControl: (id: string): Promise<{ status: string; robot_id: string; controlledBy: string }> =>
+    apiFetch(`/fleet/robots/${id}/claim-control`, { method: 'POST' }),
+
+  releaseControl: (id: string): Promise<{ status: string; robot_id: string }> =>
+    apiFetch(`/fleet/robots/${id}/release-control`, { method: 'POST' }),
+
   getRoute: (
     id: string,
     from?: string,

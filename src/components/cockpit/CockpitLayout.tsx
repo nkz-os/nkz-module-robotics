@@ -100,25 +100,31 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
 
   const handleModeChange = useCallback(async (mode: OperationMode) => {
     if (mode === 'MANUAL') {
-      // Check if someone else already has control
       try {
-        const robotData: any = await roboticsApi.getRobot(robotId);
-        const currentController = robotData.controlledBy;
-        if (currentController && currentController !== 'me') {
-          setControlOwner(currentController);
+        // Try to claim control
+        await roboticsApi.claimControl(robotId);
+        setControlBlocked(false);
+        setControlOwner(null);
+      } catch (err: any) {
+        // 409 = someone else has control
+        if (err.message?.includes('409') || err.message?.includes('under control')) {
+          setControlOwner(err.message);
           setControlBlocked(true);
           return;
         }
-      } catch { /* proceed if can't check */ }
+        // Other errors — proceed anyway
+      }
+    } else {
+      // Release control when leaving MANUAL
+      try {
+        await roboticsApi.releaseControl(robotId);
+      } catch { /* best effort */ }
+      setControlBlocked(false);
+      setControlOwner(null);
     }
 
     setOpMode(mode);
     sendCommand({ type: 'mode', value: mode });
-
-    if (mode !== 'MANUAL') {
-      setControlBlocked(false);
-      setControlOwner(null);
-    }
   }, [robotId, sendCommand]);
 
   const onEStop = useCallback(() => {

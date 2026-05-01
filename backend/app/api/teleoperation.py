@@ -5,6 +5,7 @@ import logging
 import struct
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.zenoh_client import robot_topic, put, subscribe_sse, is_reachable
+from app.services.orion_robots import get_orion_robots
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -78,6 +79,13 @@ async def control_ws(websocket: WebSocket, robot_id: str):
                     await put(topic_cmd, msg)
                 elif msg_type == "mode":
                     await put(topic_mode, {"value": msg.get("value")})
+                    # Claim/release control based on mode
+                    if tenant_id:
+                        orion = get_orion_robots(tenant_id)
+                        if msg.get("value") == "MANUAL":
+                            await orion.update_robot(robot_id, {"controlledBy": tenant_id, "operationMode": "MANUAL"})
+                        else:
+                            await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": msg.get("value", "MONITOR")})
                 elif msg_type == "heartbeat":
                     await put(topic_heartbeat, {"ts": asyncio.get_event_loop().time()})
                 elif msg_type == "camera" and not video_task:
@@ -97,3 +105,10 @@ async def control_ws(websocket: WebSocket, robot_id: str):
     finally:
         if video_task:
             video_task.cancel()
+        # Release control on disconnect
+        if tenant_id:
+            try:
+                orion = get_orion_robots(tenant_id)
+                await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": "MONITOR"})
+            except Exception:
+                pass
