@@ -1,5 +1,9 @@
 import React from 'react';
 import '../i18n';
+import RobotMapLayer from '../components/slots/RobotMapLayer';
+import RobotContextPanel from '../components/slots/RobotContextPanel';
+
+const MODULE_ID = 'robotics';
 
 export interface SlotWidgetDefinition {
   id: string;
@@ -22,9 +26,27 @@ export interface ModuleViewerSlots {
 }
 
 export const moduleSlots: ModuleViewerSlots = {
-  'map-layer': [],
+  'map-layer': [
+    {
+      id: `${MODULE_ID}-map-layer`,
+      moduleId: MODULE_ID,
+      component: 'RobotMapLayer',
+      priority: 20,
+      localComponent: RobotMapLayer,
+      showWhen: { entityType: ['AgriRobot'] },
+    },
+  ],
   'layer-toggle': [],
-  'context-panel': [],
+  'context-panel': [
+    {
+      id: `${MODULE_ID}-context-panel`,
+      moduleId: MODULE_ID,
+      component: 'RobotContextPanel',
+      priority: 10,
+      localComponent: RobotContextPanel,
+      showWhen: { entityType: ['AgriRobot'] },
+    },
+  ],
   'bottom-panel': [],
   'entity-tree': [],
 };
