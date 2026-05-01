@@ -5,9 +5,10 @@ import type { OperationMode } from '../../types/robotics';
 interface VideoViewportProps {
   videoFrame: { cameraId: number; data: ArrayBuffer } | null;
   mode: OperationMode;
+  latencyMs?: number;
 }
 
-const VideoViewport: React.FC<VideoViewportProps> = ({ videoFrame, mode }) => {
+const VideoViewport: React.FC<VideoViewportProps> = ({ videoFrame, mode, latencyMs }) => {
   const { t } = useTranslation('robotics');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeCamera, setActiveCamera] = useState(0);
@@ -45,6 +46,18 @@ const VideoViewport: React.FC<VideoViewportProps> = ({ videoFrame, mode }) => {
           <div className="w-1 h-1 bg-white/50 rounded-full" />
         </div>
       )}
+
+      <div className="absolute top-4 right-4 flex items-center gap-3 text-xs font-mono">
+        <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${
+          (latencyMs ?? 0) > 200 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${(latencyMs ?? 0) > 200 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
+          LIVE {(latencyMs ?? 0) > 0 ? `${latencyMs}ms` : ''}
+        </span>
+        <span className="text-slate-400 tabular-nums">
+          {new Date().toLocaleTimeString()}
+        </span>
+      </div>
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
         {[0, 1, 2].map(cam => (

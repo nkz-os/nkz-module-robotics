@@ -18,6 +18,10 @@ export interface RobotTelemetry {
   ang_z: number;
   speed_kmh: number;
   ts: number;
+  implement_type?: string;
+  implement_pressure?: number;
+  implement_flow_rate?: number;
+  implement_seed_rate?: number;
   error?: string;
 }
 
