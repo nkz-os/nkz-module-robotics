@@ -18,8 +18,8 @@ data:
       transport: {
         link: {
           tls: {
-            server_certificate: "/tls/tls.crt",
-            server_private_key: "/tls/tls.key"
+            listen_certificate: "/tls/tls.crt",
+            listen_private_key: "/tls/tls.key"
           }
         }
       },
