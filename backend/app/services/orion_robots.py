@@ -50,6 +50,7 @@ class OrionRobotClient:
             "name": {"type": "Property", "value": name},
             "robotType": {"type": "Property", "value": robot_type},
             "operationMode": {"type": "Property", "value": "MONITOR"},
+            "controlledBy": {"type": "Property", "value": ""},
             "battery": {"type": "Property", "value": 0},
             "location": {"type": "GeoProperty", "value": {"type": "Point", "coordinates": [0, 0]}},
         }

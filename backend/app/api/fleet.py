@@ -99,6 +99,40 @@ async def decommission_robot(robot_id: str, request: Request):
     return {"status": "decommissioned"}
 
 
+@router.post("/robots/{robot_id}/claim-control")
+async def claim_control(robot_id: str, request: Request):
+    """Claim exclusive control of a robot for teleoperation."""
+    tenant_id = request.state.tenant_id
+    client = get_orion_robots(tenant_id)
+    robot = await client.get_robot(robot_id)
+    if not robot:
+        raise HTTPException(404, f"Robot {robot_id} not found")
+
+    current = robot.get("controlledBy", {}).get("value", "")
+    if current and current != tenant_id:
+        raise HTTPException(409, f"Robot {robot_id} is under control of {current}")
+
+    await client.update_robot(robot_id, {"controlledBy": tenant_id})
+    return {"status": "claimed", "robot_id": robot_id, "controlledBy": tenant_id}
+
+
+@router.post("/robots/{robot_id}/release-control")
+async def release_control(robot_id: str, request: Request):
+    """Release exclusive control of a robot."""
+    tenant_id = request.state.tenant_id
+    client = get_orion_robots(tenant_id)
+    robot = await client.get_robot(robot_id)
+    if not robot:
+        raise HTTPException(404, f"Robot {robot_id} not found")
+
+    current = robot.get("controlledBy", {}).get("value", "")
+    if current and current != tenant_id:
+        raise HTTPException(409, f"Control is held by {current}, cannot release")
+
+    await client.update_robot(robot_id, {"controlledBy": ""})
+    return {"status": "released", "robot_id": robot_id}
+
+
 @router.get("/robots/{robot_id}/route")
 async def get_robot_route(
     robot_id: str,
