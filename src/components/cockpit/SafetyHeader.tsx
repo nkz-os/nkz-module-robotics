@@ -34,7 +34,7 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
     <header className="h-16 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 shrink-0">
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
-          <span className={`block h-3 w-3 rounded-full ${latencyMs > 300 ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'}`} />
+          <span className={`block h-3 w-3 rounded-full ${latencyMs > 300 ? 'bg-[color:var(--nkz-critical)] animate-ping' : 'bg-[color:var(--nkz-ok)]'}`} />
           <span className="font-mono text-sm font-bold text-slate-200 tracking-wider">
             {t('cockpit.latencyMs', { ms: latencyMs })}
           </span>
@@ -49,9 +49,9 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
               onClick={() => onModeChange(m)}
               className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
                 mode === m
-                  ? m === 'MANUAL' ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]'
-                  : m === 'AUTO' ? 'bg-emerald-600 text-white shadow-[0_0_15px_rgba(5,150,105,0.5)]'
-                  : 'bg-slate-600 text-white'
+                  ? m === 'MANUAL' ? 'bg-[color:var(--nkz-warning)] text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]'
+                  : m === 'AUTO' ? 'bg-[color:var(--nkz-ok)] text-white shadow-[0_0_15px_rgba(5,150,105,0.5)]'
+                  : 'bg-[color:var(--nkz-info)] text-white'
                   : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
               }`}
             >
@@ -80,7 +80,7 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
           className={`font-black px-6 py-2 rounded transition-all active:scale-95 ${
             estopPending
               ? 'bg-red-400 text-black animate-pulse'
-              : 'bg-rose-600 hover:bg-rose-700 text-white shadow-[0_0_20px_rgba(225,29,72,0.4)]'
+              : 'bg-[color:var(--nkz-critical)] hover:bg-[color:var(--nkz-critical)] text-white shadow-[0_0_20px_rgba(225,29,72,0.4)]'
           }`}
         >
           <span className="flex items-center gap-2">

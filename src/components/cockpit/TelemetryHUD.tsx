@@ -1,4 +1,5 @@
 import React from 'react';
+import { Satellite } from 'lucide-react';
 import { useTranslation } from '@nekazari/sdk';
 import type { RobotTelemetry } from '../../types/robotics';
 
@@ -35,6 +36,15 @@ const TelemetryHUD: React.FC<TelemetryHUDProps> = ({ telemetry }) => {
       <div className="flex justify-between w-44 text-[10px] text-slate-400">
         <span>{t('cockpit.hudLon')}</span>
         <span className="tabular-nums">{telemetry.lon?.toFixed(6) ?? '—'}</span>
+      </div>
+      <div className="flex justify-between w-44 text-[10px]">
+        <span className="text-slate-400 flex items-center gap-1"><Satellite size={10} /></span>
+        <span className={`tabular-nums font-medium ${
+          (telemetry as any).gnss_quality === 'RTK_FIX' ? 'text-emerald-400' :
+          (telemetry as any).gnss_quality === 'RTK_FLOAT' ? 'text-amber-400' :
+          (telemetry as any).gnss_quality === 'DGPS' ? 'text-blue-400' :
+          'text-red-400'
+        }`}>{(telemetry as any).gnss_quality || 'NO_FIX'}</span>
       </div>
     </div>
   );
