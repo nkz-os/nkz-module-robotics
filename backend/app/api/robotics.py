@@ -29,10 +29,12 @@ async def get_robot_config(
     base_prefix = f"nkz/{tenant_id}/{robot_id}"
     
     # 2. Connection Endpoints
-    # In a real deployment, this might be dynamic based on the region or availability.
-    # For Phase 1, we assume the VPN Gateway (10.8.0.1) proxies or the Robot can route to the Cluster.
-    # We provide the VPN internal IP as the primary contact point.
-    router_endpoints = ["tcp/10.8.0.1:7447"] 
+    # Primary: via VPN subnet router (internal service DNS)
+    # The Tailscale subnet router advertises the K8s service CIDR,
+    # so robots on the VPN can resolve and reach ClusterIP services directly.
+    router_endpoints = [
+        "tcp/zenoh-service.nekazari.svc.cluster.local:7447",
+    ] 
 
     return ZenohConfig(
         mode="client",

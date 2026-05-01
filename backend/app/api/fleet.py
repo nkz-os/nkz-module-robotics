@@ -69,7 +69,7 @@ async def register_robot(body: RegisterRobotBody, request: Request):
         credentials=RobotCredentials(
             username=username,
             password=password,
-            endpoint="tcp/zenoh.nekazari.robotika.cloud:7447",
+            endpoint="tcp/zenoh-service.nekazari.svc.cluster.local:7447",
         ),
     )
 
