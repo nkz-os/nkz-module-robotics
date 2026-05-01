@@ -1,0 +1,18 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: zenoh-router-tcp
+  namespace: nekazari
+  labels:
+    app: zenoh-router
+    module: robotics
+spec:
+  entryPoints:
+    - zenoh
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: zenoh-service
+          port: 7447
+  tls:
+    passthrough: true

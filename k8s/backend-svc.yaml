@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: robotics-api-service
+  namespace: nekazari
+  labels:
+    app: robotics-api
+    module: robotics
+spec:
+  selector:
+    app: robotics-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP

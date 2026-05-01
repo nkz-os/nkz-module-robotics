@@ -28,12 +28,6 @@ spec:
             - containerPort: 7447
               name: tcp
               protocol: TCP
-            - containerPort: 7447
-              name: udp
-              protocol: UDP
-            - containerPort: 8447
-              name: ws
-              protocol: TCP
             - containerPort: 8000
               name: http
               protocol: TCP
@@ -47,63 +41,13 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: tls
+              mountPath: /tls
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: zenoh-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: zenoh-service
-  namespace: nekazari
-  labels:
-    app: zenoh-router
-spec:
-  selector:
-    app: zenoh-router
-  ports:
-    - name: tcp
-      port: 7447
-      targetPort: 7447
-      protocol: TCP
-    - name: udp
-      port: 7447
-      targetPort: 7447
-      protocol: UDP
-    - name: ws
-      port: 8447
-      targetPort: 8447
-      protocol: TCP
-  type: ClusterIP
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: zenoh-config
-  namespace: nekazari
-data:
-  zenoh.json5: |
-    {
-      mode: "router",
-      listen: {
-        endpoints: [
-          "tcp/0.0.0.0:7447", 
-          "udp/0.0.0.0:7447",
-          "ws/0.0.0.0:8447"
-        ]
-      },
-      plugins: {
-        rest: {
-          http_port: 8000
-        }
-        // TODO: Enable Username/Password Authentication for Production
-        // auth: {
-        //   username_password: {
-        //     users: [
-        //       // Users will be dynamically managed or mounted via Secret
-        //     ]
-        //   }
-        // }
-      }
-    }
+        - name: tls
+          secret:
+            secretName: zenoh-tls
