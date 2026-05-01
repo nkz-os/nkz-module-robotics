@@ -2,11 +2,12 @@ import React, { useRef, useCallback } from 'react';
 
 interface JoystickProps {
   onMove: (linearX: number, angularZ: number) => void;
+  onRelease?: () => void;
   disabled?: boolean;
   size?: number;
 }
 
-const Joystick: React.FC<JoystickProps> = ({ onMove, disabled = false, size = 120 }) => {
+const Joystick: React.FC<JoystickProps> = ({ onMove, onRelease, disabled = false, size = 120 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(false);
@@ -30,7 +31,8 @@ const Joystick: React.FC<JoystickProps> = ({ onMove, disabled = false, size = 12
     activeRef.current = false;
     if (knobRef.current) knobRef.current.style.transform = 'translate(0, 0)';
     onMove(0, 0);
-  }, [onMove]);
+    onRelease?.();
+  }, [onMove, onRelease]);
 
   return (
     <div

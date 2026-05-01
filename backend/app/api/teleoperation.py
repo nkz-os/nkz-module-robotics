@@ -64,16 +64,20 @@ async def control_ws(websocket: WebSocket, robot_id: str):
 
                 msg_type = msg.get("type", "")
 
-                if msg_type == "cmd_vel":
-                    await put(topic_cmd, msg)
-                elif msg_type == "mode":
-                    await put(topic_mode, {"value": msg.get("value")})
-                elif msg_type == "estop":
-                    await put(topic_cmd, {
+                if msg_type == "estop":
+                    # E-STOP is priority 0 — must be sent immediately
+                    # Use a fire-and-forget approach with minimal timeout
+                    asyncio.create_task(put(topic_cmd, {
                         "linear": {"x": 0, "y": 0, "z": 0},
                         "angular": {"x": 0, "y": 0, "z": 0},
                         "estop": True,
-                    })
+                    }, timeout=1.0))
+                    # Also set mode to MONITOR
+                    asyncio.create_task(put(topic_mode, {"value": "MONITOR"}, timeout=1.0))
+                elif msg_type == "cmd_vel":
+                    await put(topic_cmd, msg)
+                elif msg_type == "mode":
+                    await put(topic_mode, {"value": msg.get("value")})
                 elif msg_type == "heartbeat":
                     await put(topic_heartbeat, {"ts": asyncio.get_event_loop().time()})
                 elif msg_type == "camera" and not video_task:
