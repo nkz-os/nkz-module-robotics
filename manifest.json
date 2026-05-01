@@ -37,10 +37,9 @@
     "external_requests": []
   },
   "build_config": {
-    "type": "remote",
-    "remote_entry_url": "/modules/robotics/assets/remoteEntry.js",
-    "scope": "robotics",
-    "exposed_module": "./App"
+    "type": "iife",
+    "bucket": "nekazari-frontend",
+    "key": "modules/robotics/nkz-module.js"
   },
   "navigation": {
     "sidebar": {
