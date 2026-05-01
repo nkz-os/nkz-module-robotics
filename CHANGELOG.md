@@ -1,47 +1,32 @@
 # Changelog
 
-## [1.0.0] - December 2025
+## [2.0.0] — 2026-04-30
 
 ### Added
-- ✅ SDK packages from NPM (`@nekazari/sdk`, `@nekazari/ui-kit`)
-- ✅ Real SDK usage in App.tsx (no mocks)
-- ✅ UI-Kit components (Button, Card) in example
-- ✅ Full TypeScript support with published packages
+- Fleet dashboard with Cesium map, robot cards, search
+- Teleoperation cockpit with multi-camera, HUD, 4WS, joystick, gamepad
+- FastAPI backend with SSE telemetry + WebSocket control + video relay
+- Zenoh router deployment with TLS + per-tenant ACLs
+- Orion-LD AgriRobot CRUD with automatic Zenoh credential provisioning
+- Geofence editor and GPS route history playback
+- High-Contrast Industrial HMI for field use
+- Native Shell postMessage bridge for hardware integration
+- Mobile-responsive (350px+) with HMI mode
 
 ### Changed
-- Updated `package.json` to include published SDK packages
-- Updated `src/App.tsx` to use real SDK imports instead of mocks
-- Updated README with NPM package information
+- Switched from Module Federation to IIFE bundle
+- Replaced Conda/micromamba with python:3.12-slim
+- Removed all LiDAR code (moved to separate `nkz-module-lidar`)
 
 ### Removed
-- Mock implementations of SDK functions
-- Type definition placeholders (now using real types from packages)
+- All LiDAR point cloud processing, 3D Tiles, tree detection, PNOA integration
+- Module Federation remoteEntry.js
+- Redis/RQ worker
 
----
+## [1.0.0] — December 2025
 
-**Note**: This template now uses the publicly available SDK packages from NPM, making it easier for developers to get started without needing to configure SDK access separately.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+### Added
+- Initial template with SDK packages from NPM
+- Real SDK usage in App.tsx
+- UI-Kit components
+- Full TypeScript support
