@@ -1,8 +1,8 @@
 /**
- * Main entry point for LiDAR Module
- * 
- * For development/standalone mode, renders the app to #root.
- * In production (Module Federation), the app is loaded via remoteEntry.js.
+ * Main entry point for Robotics Module (IIFE bundle)
+ *
+ * In development/standalone mode, renders the app to #root.
+ * In production, the IIFE bundle registers via window.__NKZ__.
  */
 
 import React from 'react';

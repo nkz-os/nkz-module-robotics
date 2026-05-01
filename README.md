@@ -1,33 +1,43 @@
 # Robotics & Telemetry Module (`nkz-module-robotics`)
 
-**Vendor**: [Robotika](https://robotika.cloud)  
+**Vendor**: [Robotika](https://robotika.cloud)
 **Standard**: NKZ (Nekazari)
+**License**: AGPL-3.0
 
-This module enables advanced robotics integration for the Nekazari platform, specifically focusing on low-latency telemetry and control via **Eclipse Zenoh**.
+Professional robotics fleet management and real-time teleoperation module.
 
 ## Features
 
--   **Zenoh Router**: A dedicated Zenoh router deployment (`zenoh-router`) running in the `nekazari` namespace.
--   **Low-Latency Control**: Optimized for video streaming and joystick teleoperation.
--   **Fleet Management**: Interfaces for managing robot fleets (future hook into `entity-manager`).
+- **Fleet Dashboard** — Cesium map with live robot markers, status cards, geofence editor, GPS route history
+- **Teleoperation Cockpit** — Multi-camera video streaming, real-time telemetry HUD, 4WS drive mode selection, touch joystick + gamepad support, two-step E-STOP
+- **Zenoh Router** — TLS-secured pub/sub with per-tenant, per-robot ACLs
+- **Orion-LD Integration** — AgriRobot entities as source of truth, NGSI-LD native
+- **Mobile-ready** — Responsive 350px+, HMI mode for tractor cabin tablets, Native Shell bridge for hardware E-STOP and GPS
 
 ## Architecture
 
-### Zenoh Integration
-The module deploys a Zenoh router that acts as the central message broker for robots.
--   **Ports**: `7447` (TCP/UDP) for peer-to-peer and routed communication.
--   **Connectivity**: Robots should connect to this router via the Platform VPN (`nekazari-vpn`) or internal cluster network.
+Dual-speed data plane:
 
-### MQTT Co-existence
-This module works alongside the core `mosquitto` broker.
--   **Telemetry (Slow)**: GPS, Battery, Status -> MQTT (Core)
--   **Teleoperation (Fast)**: Video, Joystick -> Zenoh (This Module)
-
-## Deployment
-
-This module includes Kubernetes manifests in `k8s/`:
--   `zenoh-deployment.yaml`: Deploys the Zenoh router.
+- **Management Plane**: MQTT → IoT Agent → Orion-LD → TimescaleDB (GPS, battery, OpMode)
+- **Control Plane**: Robot ↔ Zenoh TLS ↔ Backend (FastAPI) ↔ SSE+WS ↔ Frontend
 
 ## Development
 
-See the root `nekazari-public` documentation for module development guidelines.
+```bash
+pnpm install
+pnpm dev          # Start dev server on :5004
+pnpm build        # Build IIFE bundle → dist/nekazari-module.js
+pnpm typecheck    # TypeScript check
+```
+
+## Deployment
+
+Frontend: upload `dist/nekazari-module.js` to MinIO bucket `nekazari-frontend` at key `modules/robotics/nkz-module.js`.
+
+Backend: build and push Docker image, apply K8s manifests.
+
+```bash
+docker build -t ghcr.io/nkz-os/nkz-module-robotics/robotics-backend:latest backend/
+docker push ghcr.io/nkz-os/nkz-module-robotics/robotics-backend:latest
+kubectl apply -k k8s/
+```
