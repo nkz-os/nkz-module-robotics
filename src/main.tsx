@@ -7,7 +7,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import LidarApp from './App';
+import RoboticsApp from './App';
 import './index.css';
 
 // Check if we're running standalone (not as federated module)
@@ -16,7 +16,7 @@ const rootElement = document.getElementById('root');
 if (rootElement) {
     ReactDOM.createRoot(rootElement).render(
         <React.StrictMode>
-            <LidarApp />
+            <RoboticsApp />
         </React.StrictMode>
     );
 }

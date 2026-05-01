@@ -34,6 +34,4 @@ if (typeof window !== 'undefined' && window.__NKZ__) {
     viewerSlots: moduleSlots,
     version: '1.0.0',
   });
-} else {
-  console.error(`[${MODULE_ID}] window.__NKZ__ not found. Is this bundle loaded inside the NKZ host?`);
 }
