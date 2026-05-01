@@ -25,7 +25,7 @@ export interface RobotInfo {
   id: string;
   name: string;
   type: string;
-  operationMode: 'MONITOR' | 'MANUAL' | 'AUTO';
+  operationMode: 'MONITOR' | 'MANUAL' | 'AUTO' | 'ESTOP';
   battery: number;
   location?: { type: string; coordinates: [number, number] };
   dateModified?: string;
@@ -33,7 +33,7 @@ export interface RobotInfo {
 
 export type DriveMode = 'ACKERMANN_FRONT' | 'ACKERMANN_DUAL' | 'CRAB' | 'DIFFERENTIAL';
 
-export type OperationMode = 'MONITOR' | 'MANUAL' | 'AUTO';
+export type OperationMode = 'MONITOR' | 'MANUAL' | 'AUTO' | 'ESTOP';
 
 export interface Geofence {
   id: string;
