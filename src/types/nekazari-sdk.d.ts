@@ -14,3 +14,7 @@ declare module '@nekazari/sdk' {
     i18n: typeof i18n;
   };
 }
+
+declare module '@nekazari/ui-kit' {
+  export function useHMI(): { isHmiMode: boolean };
+}

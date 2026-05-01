@@ -1,29 +1,15 @@
-// =============================================================================
-// Robotics API Client
-// Communicates with nkz-module-robotics backend (FastAPI).
-// =============================================================================
+import type { RobotInfo, RobotCredentials, ZenohConfig } from '../types/robotics';
 
 declare global {
   interface Window {
     __ENV__?: { VITE_API_URL?: string };
-    __NKZ_SDK__?: { auth?: { getToken?: () => string } };
-    __nekazariAuth?: { token?: string };
   }
 }
 
-// API base is injected at runtime by the host nginx (window.__ENV__.VITE_API_URL).
-// Falls back to build-time env var, then empty string (relative paths work when
-// the frontend and API are served from the same origin).
-const API_BASE =
-  window.__ENV__?.VITE_API_URL ||
-  (import.meta as any).env?.VITE_API_URL ||
-  '';
-
+const API_BASE = (window.__ENV__?.VITE_API_URL || '').replace(/\/$/, '');
 const ROBOTICS_URL = `${API_BASE}/api/robotics`;
 
-// Auth is handled via httpOnly cookie (credentials: 'include').
-
-async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${ROBOTICS_URL}${path}`, {
     ...options,
     credentials: 'include',
@@ -33,110 +19,70 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
     },
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as any).detail || `HTTP ${res.status}`);
   }
-  return res;
+  return res.json();
 }
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface Vector3 {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface Twist {
-  linear: Vector3;
-  angular: Vector3;
-}
-
-export interface ZenohConfig {
-  mode: string;
-  connect: string[];
-  namespaces: Record<string, string>;
-  safety: Record<string, unknown>;
-}
-
-export interface RobotTelemetry {
-  battery_pct?: number;
-  heading_deg?: number;
-  lat?: number;
-  lon?: number;
-  lin_x?: number;
-  ang_z?: number;
-  ts?: number;
-  error?: string;
-}
-
-// ---------------------------------------------------------------------------
-// API methods
-// ---------------------------------------------------------------------------
 
 export const roboticsApi = {
-  async getConfig(robotId: string, tenantId: string): Promise<ZenohConfig> {
-    const res = await apiFetch(`/devices/${robotId}/config?tenant_id=${tenantId}`);
-    return res.json();
+  // -- Fleet ------------------------------------------------------------
+  listRobots: (): Promise<{ robots: RobotInfo[]; count: number }> =>
+    apiFetch('/fleet/robots'),
+
+  getRobot: (id: string): Promise<RobotInfo> =>
+    apiFetch(`/fleet/robots/${id}`),
+
+  registerRobot: (body: {
+    name: string;
+    robot_id: string;
+    robot_type?: string;
+    parcel_id?: string | null;
+  }): Promise<{ robot_id: string; name: string; credentials: RobotCredentials }> =>
+    apiFetch('/fleet/robots', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateRobot: (id: string, attrs: Record<string, unknown>): Promise<void> =>
+    apiFetch(`/fleet/robots/${id}`, { method: 'PATCH', body: JSON.stringify(attrs) }),
+
+  decommissionRobot: (id: string): Promise<void> =>
+    apiFetch(`/fleet/robots/${id}`, { method: 'DELETE' }),
+
+  getRoute: (
+    id: string,
+    from?: string,
+    to?: string,
+    limit?: number,
+  ): Promise<{ robot_id: string; geometry: any }> => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (limit) params.set('limit', String(limit));
+    return apiFetch(`/fleet/robots/${id}/route?${params}`);
   },
 
-  async emergencyStop(robotId: string, tenantId: string): Promise<void> {
-    await apiFetch(`/devices/${robotId}/emergency_stop?tenant_id=${tenantId}`, {
-      method: 'POST',
-    });
-  },
+  // -- Teleop config ----------------------------------------------------
+  getConfig: (robotId: string, tenantId: string): Promise<ZenohConfig> =>
+    apiFetch(`/teleop/${robotId}/config?tenant_id=${tenantId}`),
 
-  async publishCmdVel(robotId: string, tenantId: string, twist: Twist): Promise<void> {
-    await apiFetch(`/devices/${robotId}/cmd_vel?tenant_id=${tenantId}`, {
-      method: 'POST',
-      body: JSON.stringify(twist),
-    });
-  },
-
-  async heartbeat(robotId: string, tenantId: string): Promise<void> {
-    await apiFetch(`/devices/${robotId}/heartbeat?tenant_id=${tenantId}`, {
-      method: 'POST',
-    });
-  },
-
-  async ping(robotId: string, tenantId: string): Promise<number> {
-    const t0 = Date.now();
-    await apiFetch(`/devices/${robotId}/ping?tenant_id=${tenantId}`, {
-      method: 'POST',
-    });
-    return Date.now() - t0;
-  },
-
-  /**
-   * Subscribe to robot telemetry via SSE.
-   * The backend proxies the Zenoh telemetry topic as a text/event-stream.
-   *
-   * Returns a cleanup function — call it to close the EventSource.
-   */
+  // -- SSE telemetry ----------------------------------------------------
   streamTelemetry(
     robotId: string,
-    tenantId: string,
-    onData: (telemetry: RobotTelemetry) => void,
+    onData: (data: any) => void,
     onError?: (err: Event) => void,
   ): () => void {
-    // EventSource with withCredentials sends cookies cross-origin.
-    const params = new URLSearchParams({ tenant_id: tenantId });
-    const url = `${ROBOTICS_URL}/devices/${robotId}/telemetry/stream?${params}`;
-
+    const url = `${ROBOTICS_URL}/teleop/${robotId}/stream`;
     const es = new EventSource(url, { withCredentials: true });
-
-    es.onmessage = (e: MessageEvent) => {
-      try {
-        const data: RobotTelemetry = JSON.parse(e.data);
-        if (!data.error) onData(data);
-      } catch { /* skip malformed frames */ }
+    es.onmessage = (e) => {
+      try { onData(JSON.parse(e.data)); } catch { /* skip malformed frames */ }
     };
-
-    if (onError) {
-      es.onerror = onError;
-    }
-
+    if (onError) es.onerror = onError;
     return () => es.close();
+  },
+
+  // -- WebSocket control ------------------------------------------------
+  connectControl(robotId: string): WebSocket {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const base = API_BASE.replace(/^https?:/, '');
+    return new WebSocket(`${protocol}//${base}/api/robotics/teleop/${robotId}/control`);
   },
 };
