@@ -1,4 +1,1 @@
-"""
-LIDAR Module Backend
-"""
-
+"""Robotics Module Backend"""
