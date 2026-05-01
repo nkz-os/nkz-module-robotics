@@ -42,10 +42,12 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
 
         <div className="h-8 w-px bg-slate-800" />
 
-        <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
+        <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800" role="radiogroup" aria-label="Operation mode">
           {MODES.map(m => (
             <button
               key={m}
+              role="radio"
+              aria-checked={mode === m}
               onClick={() => onModeChange(m)}
               className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
                 mode === m
@@ -77,6 +79,7 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
 
         <button
           onClick={handleEStop}
+          aria-label={estopPending ? t('cockpit.eStopConfirm') : t('cockpit.eStop')}
           className={`font-black px-6 py-2 rounded transition-all active:scale-95 ${
             estopPending
               ? 'bg-red-400 text-black animate-pulse'

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useHMI } from '@nekazari/ui-kit';
 import { useRoboticsSSE } from '../../hooks/useRoboticsSSE';
 import { useRoboticsWS } from '../../hooks/useRoboticsWS';
@@ -27,6 +27,8 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
   const [controlOwner, setControlOwner] = useState<string | null>(null);
   const [controlBlocked, setControlBlocked] = useState(false);
   const [latencyLockout, setLatencyLockout] = useState(false);
+  const [estopActive, setEstopActive] = useState(false);
+  const [rearmStep, setRearmStep] = useState(0); // 0=normal, 1=cause shown, 2=ready to re-arm
   const highLatencyTimerRef = useRef<number>(0);
   const LATENCY_THRESHOLD = 200; // ms
   const LATENCY_GRACE_MS = 2000;  // 2 seconds
@@ -129,6 +131,8 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
 
   const onEStop = useCallback(() => {
     sendCommand({ type: 'estop' });
+    setEstopActive(true);
+    setRearmStep(1);
   }, [sendCommand]);
 
   return (
@@ -151,7 +155,7 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
 
       <main className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative">
-          <VideoViewport videoFrame={videoFrame} mode={opMode} />
+          <VideoViewport videoFrame={videoFrame} mode={opMode} latencyMs={latencyMs} />
           <TelemetryHUD telemetry={telemetry} />
         </div>
       </main>
@@ -169,7 +173,14 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
           <MiniMap lat={telemetry?.lat ?? null} lon={telemetry?.lon ?? null} />
         </div>
         <div className="col-span-3">
-          <ImplementPanel implementType="Sprayer" implementData={{ pressure: 2.4, flow_rate: 12 }} />
+          <ImplementPanel
+            implementType={telemetry?.implement_type ?? null}
+            implementData={{
+              pressure: telemetry?.implement_pressure ?? 0,
+              flow_rate: telemetry?.implement_flow_rate ?? 0,
+              seed_rate: telemetry?.implement_seed_rate ?? 0,
+            }}
+          />
         </div>
       </footer>
 
@@ -210,6 +221,64 @@ const CockpitLayout: React.FC<CockpitLayoutProps> = ({ robotId, onBack }) => {
             >
               Reconectar y reactivar
             </button>
+          </div>
+        </div>
+      )}
+
+      {estopActive && (
+        <div className="absolute inset-0 z-50 bg-black/85 flex items-center justify-center backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-8 max-w-md text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-red-500/20 border-2 border-red-500 flex items-center justify-center mx-auto">
+              <AlertTriangle size={32} className="text-red-500" />
+            </div>
+            <h2 className="text-xl font-bold text-white">E-STOP activado</h2>
+
+            {rearmStep === 1 && (
+              <>
+                <p className="text-slate-400 text-sm">
+                  Causa: Parada de emergencia remota desde cockpit.
+                </p>
+                <p className="text-slate-500 text-xs">
+                  Verifica que la causa ha sido resuelta. Si es un E-STOP f&iacute;sico, libera el dispositivo.
+                </p>
+                <button
+                  onClick={() => setRearmStep(2)}
+                  className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors"
+                >
+                  Causa resuelta &mdash; Continuar
+                </button>
+              </>
+            )}
+
+            {rearmStep === 2 && (
+              <>
+                <p className="text-slate-300 text-sm">
+                  Confirma el re-armado. El robot volver&aacute; a estado <strong>En espera (MONITOR)</strong>.
+                </p>
+                <p className="text-slate-500 text-xs">
+                  Deber&aacute;s cambiar manualmente a AUTO o MANUAL para reanudar la operaci&oacute;n.
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => {
+                      setEstopActive(false);
+                      setRearmStep(0);
+                      setOpMode('MONITOR');
+                      sendCommand({ type: 'mode', value: 'MONITOR' });
+                    }}
+                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors"
+                  >
+                    Confirmar re-armado
+                  </button>
+                  <button
+                    onClick={() => setRearmStep(1)}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
