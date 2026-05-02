@@ -5,6 +5,7 @@ interface FleetMapProps {
   robots: RobotInfo[];
   onSelectRobot?: (id: string) => void;
   routeGeometry?: any; // GeoJSON geometry for route overlay
+  onViewerReady?: (viewer: any) => void;  // NEW
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,7 +48,7 @@ function createArrowCanvas(color: string, headingDeg: number): HTMLCanvasElement
   return canvas;
 }
 
-const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometry }) => {
+const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometry, onViewerReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
 
@@ -66,6 +67,7 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       sceneModePicker: false,
     });
     viewerRef.current = viewer;
+    if (onViewerReady) onViewerReady(viewer);
 
     robots.forEach(robot => {
       if (!robot.location?.coordinates) return;
