@@ -31,6 +31,7 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
   const [pauseLoading, setPauseLoading] = useState(false);
   const [estopPending, setEstopPending] = useState(false);
   const [estopResult, setEstopResult] = useState<string | null>(null);
+  const [cesiumViewer, setCesiumViewer] = useState<any>(null);
   const [showWizard, setShowWizard] = useState(false);
 
   // Filters
@@ -76,12 +77,12 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
   const handleStartDrawing = () => setDrawingGeofence(true);
   const handleCancelDrawing = () => setDrawingGeofence(false);
 
-  const handleSaveGeofence = (name: string, type: 'inclusion' | 'exclusion') => {
+  const handleSaveGeofence = (name: string, type: 'inclusion' | 'exclusion', coordinates: number[][][]) => {
     const newFence: Geofence = {
       id: `gf-${Date.now()}`,
       name,
       type,
-      geometry: { type: 'Polygon', coordinates: [] },
+      geometry: { type: 'Polygon', coordinates },
       active: true,
     };
     setGeofences([...geofences, newFence]);
@@ -240,6 +241,7 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
             robots={sorted}
             onSelectRobot={setSelectedRobotId}
             routeGeometry={routeGeometry}
+            onViewerReady={setCesiumViewer}
           />
         </div>
         <div className="w-64 space-y-4">
@@ -252,6 +254,7 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
             onDelete={handleDeleteGeofence}
             onSelectGeofence={setActiveGeofenceId}
             drawing={drawingGeofence}
+            cesiumViewer={cesiumViewer}
           />
           <RouteHistory
             robotId={selectedRobotId}
