@@ -27,7 +27,8 @@
   "dependencies": {
     "sdk_version": "^1.0.0",
     "react_version": "^18.3.1",
-    "platform_version": "^2.0.0"
+    "platform_version": "^2.0.0",
+    "modules": ["vpn"]
   },
   "permissions": {
     "api_access": [

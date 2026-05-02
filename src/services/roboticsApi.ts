@@ -47,6 +47,30 @@ export const roboticsApi = {
   decommissionRobot: (id: string): Promise<void> =>
     apiFetch(`/fleet/robots/${id}`, { method: 'DELETE' }),
 
+  provisionRobot: (body: {
+    name: string;
+    robot_id: string;
+    robot_type?: string;
+    parcel_id?: string | null;
+    device_uuid: string;
+    claim_code: string;
+  }): Promise<{
+    robot_id: string;
+    name: string;
+    device_uuid: string;
+    credentials: RobotCredentials;
+    tailscale_auth_key: string | null;
+    tailscale_login_server: string | null;
+    ngsi_entity_id: string | null;
+  }> => apiFetch('/fleet/robots/provision', { method: 'POST', body: JSON.stringify(body) }),
+
+  checkVpnStatus: (): Promise<{
+    vpn_available: boolean;
+    vpn_url: string;
+    vpn_status: any;
+    hint?: string;
+  }> => apiFetch('/fleet/vpn/check'),
+
   claimControl: (id: string): Promise<{ status: string; robot_id: string; controlledBy: string }> =>
     apiFetch(`/fleet/robots/${id}/claim-control`, { method: 'POST' }),
 
