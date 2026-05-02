@@ -23,5 +23,18 @@ export function useFleet() {
 
   const selectRobot = useCallback((id: string | null) => setSelected(id), []);
 
-  return { robots, selected, selectRobot, refresh, loading };
+  const provision = useCallback(async (body: {
+    name: string;
+    robot_id: string;
+    robot_type?: string;
+    parcel_id?: string | null;
+    device_uuid: string;
+    claim_code: string;
+  }) => {
+    const result = await roboticsApi.provisionRobot(body);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  return { robots, selected, selectRobot, refresh, loading, provision };
 }
