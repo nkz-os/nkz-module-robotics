@@ -197,7 +197,6 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
               </button>
             </>
           )}
-          </button>
         </div>
       </div>
 
