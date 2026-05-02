@@ -27,11 +27,27 @@ declare global {
   }
 }
 
-if (typeof window !== 'undefined' && window.__NKZ__) {
-  window.__NKZ__.register({
-    id: MODULE_ID,
-    main: RoboticsApp,
-    viewerSlots: moduleSlots,
-    version: '1.0.0',
-  });
+function tryRegister(): void {
+  if (typeof window !== 'undefined' && window.__NKZ__) {
+    window.__NKZ__.register({
+      id: MODULE_ID,
+      main: RoboticsApp,
+      viewerSlots: moduleSlots,
+      version: '1.0.0',
+    });
+  } else {
+    // Host SDK not ready yet — retry on next tick (max 50 attempts = 5s)
+    const attempts = (window as any).__nkzRegisterAttempts || 0;
+    if (attempts < 50) {
+      (window as any).__nkzRegisterAttempts = attempts + 1;
+      setTimeout(tryRegister, 100);
+    } else {
+      console.error(
+        `[${MODULE_ID}] window.__NKZ__ not found after ${attempts} attempts. ` +
+        'Is this bundle loaded inside the NKZ host?',
+      );
+    }
+  }
 }
+
+tryRegister();
