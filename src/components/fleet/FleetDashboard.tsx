@@ -7,6 +7,7 @@ import FleetMap from './FleetMap';
 import FleetTable from './FleetTable';
 import GeofenceEditor from './GeofenceEditor';
 import RouteHistory from './RouteHistory';
+import AddRobotWizard from './AddRobotWizard';
 import type { Geofence } from '../../types/robotics';
 
 interface FleetDashboardProps {
@@ -17,7 +18,7 @@ type FilterKey = 'all' | 'warnings' | 'stopped' | 'no_comms';
 
 const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
   const { t } = useTranslation('robotics');
-  const { robots, loading, refresh } = useFleet();
+  const { robots } = useFleet();
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -26,6 +27,7 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [drawingGeofence, setDrawingGeofence] = useState(false);
   const [activeGeofenceId, setActiveGeofenceId] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
 
   // Filters
   const FILTERS: { key: FilterKey; label: string }[] = [
@@ -136,9 +138,8 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
 
           {/* Register button */}
           <button
-            onClick={refresh}
-            disabled={loading}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+            onClick={() => setShowWizard(true)}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
           >
             <Plus size={16} />
             {t('fleet.registerRobot')}
@@ -223,6 +224,12 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
           />
         </div>
       </div>
+
+      <AddRobotWizard
+        isOpen={showWizard}
+        onClose={() => setShowWizard(false)}
+        onNavigateToCockpit={onOpenCockpit}
+      />
     </div>
   );
 };
