@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from app.config import settings
 from app.middleware.auth import extract_tenant_id
 from app.api.fleet import router as fleet_router
@@ -39,7 +40,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def tenant_middleware(request: Request, call_next):
-    if request.url.path in ("/health", "/", "/docs", "/openapi.json"):
+    if request.url.path in ("/health", "/", "/docs", "/openapi.json", "/metrics"):
         return await call_next(request)
     try:
         request.state.tenant_id = await extract_tenant_id(request)
@@ -51,6 +52,9 @@ async def tenant_middleware(request: Request, call_next):
 app.include_router(fleet_router, prefix="/api/robotics/fleet", tags=["Fleet"])
 app.include_router(telemetry_router, prefix="/api/robotics/teleop", tags=["Telemetry"])
 app.include_router(teleop_router, prefix="/api/robotics/teleop", tags=["Teleoperation"])
+
+# Prometheus metrics — exposed at /metrics (no auth required)
+Instrumentator().instrument(app).expose(app, include_in_schema=True)
 
 
 @app.get("/health")
