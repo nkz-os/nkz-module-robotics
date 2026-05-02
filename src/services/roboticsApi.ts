@@ -109,6 +109,13 @@ export const roboticsApi = {
     return () => es.close();
   },
 
+  // -- Fleet actions ----------------------------------------------------
+  pauseAll: (): Promise<{ action: string; robots_affected: number; status: string }> =>
+    apiFetch('/fleet/actions/pause-all', { method: 'POST' }),
+
+  estopAll: (): Promise<{ action: string; robots_affected: number; status: string }> =>
+    apiFetch('/fleet/actions/estop-all', { method: 'POST' }),
+
   // -- WebSocket control ------------------------------------------------
   connectControl(robotId: string): WebSocket {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

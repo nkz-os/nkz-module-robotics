@@ -330,3 +330,61 @@ async def get_robot_route(
         return {"robot_id": robot_id, "geometry": geom}
     finally:
         await conn.close()
+
+
+# ── Fleet-wide actions ──────────────────────────────────────────────
+
+
+@router.post("/actions/pause-all")
+async def pause_all(request: Request):
+    """Soft stop: set all tenant robots to MONITOR mode (gradual deceleration)."""
+    tenant_id = request.state.tenant_id
+    client = get_orion_robots(tenant_id)
+    robots = await client.list_robots()
+
+    updated = 0
+    for robot in robots:
+        rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
+        if not rid:
+            continue
+        await client.update_robot(rid, {"operationMode": "MONITOR"})
+        # Send mode change via Zenoh if robot is online
+        try:
+            from app.services.zenoh_client import robot_topic, put
+            await put(robot_topic(tenant_id, rid, "mode"), {"value": "MONITOR"}, timeout=1.0)
+        except Exception:
+            pass
+        updated += 1
+
+    logger.info("Pause All: %s robots set to MONITOR for tenant %s", updated, tenant_id)
+    return {"action": "pause-all", "robots_affected": updated, "status": "ok"}
+
+
+@router.post("/actions/estop-all")
+async def estop_all(request: Request):
+    """Emergency stop: cut traction on all tenant robots immediately."""
+    tenant_id = request.state.tenant_id
+    client = get_orion_robots(tenant_id)
+    robots = await client.list_robots()
+
+    affected = 0
+    for robot in robots:
+        rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
+        if not rid:
+            continue
+        # Send E-STOP via Zenoh
+        try:
+            from app.services.zenoh_client import robot_topic, put
+            await put(robot_topic(tenant_id, rid, "cmd_vel"), {
+                "linear": {"x": 0, "y": 0, "z": 0},
+                "angular": {"x": 0, "y": 0, "z": 0},
+                "estop": True,
+            }, timeout=1.0)
+            await put(robot_topic(tenant_id, rid, "mode"), {"value": "MONITOR"}, timeout=1.0)
+        except Exception:
+            pass
+        await client.update_robot(rid, {"operationMode": "MONITOR"})
+        affected += 1
+
+    logger.warning("E-Stop All: %s robots emergency-stopped for tenant %s", affected, tenant_id)
+    return {"action": "estop-all", "robots_affected": affected, "status": "ok"}
