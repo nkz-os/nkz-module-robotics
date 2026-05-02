@@ -164,7 +164,7 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
             </button>
           </div>
 
-          {/* Register button */}
+          {/* Register + refresh */}
           <button
             onClick={() => setShowWizard(true)}
             className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
@@ -173,25 +173,30 @@ const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
             {t('fleet.registerRobot')}
           </button>
 
-          {/* Global actions */}
-          <button
-            onClick={handlePauseAll}
-            disabled={pauseLoading}
-            className="px-3 py-2 bg-amber-600/20 hover:bg-amber-600/30 disabled:opacity-50 text-amber-400 text-xs font-medium rounded-lg flex items-center gap-1.5 border border-amber-500/20 transition-colors"
-          >
-            <Pause size={14} />
-            {pauseLoading ? 'Pausing...' : 'Pause All'}
-          </button>
-          <button
-            onClick={handleEStopAll}
-            className={`px-3 py-2 text-xs font-medium rounded-lg flex items-center gap-1.5 border transition-all ${
-              estopPending
-                ? 'bg-red-600 text-white border-red-400 animate-pulse'
-                : 'bg-red-600/20 hover:bg-red-600/30 text-red-400 border-red-500/20'
-            }`}
-          >
-            <AlertTriangle size={14} />
-            {estopPending ? 'Confirm E-Stop All' : 'E-Stop All'}
+          {/* Global actions — only visible when there are robots */}
+          {robots.length > 0 && (
+            <>
+              <button
+                onClick={handlePauseAll}
+                disabled={pauseLoading}
+                className="px-3 py-2 bg-amber-600/20 hover:bg-amber-600/30 disabled:opacity-50 text-amber-400 text-xs font-medium rounded-lg flex items-center gap-1.5 border border-amber-500/20 transition-colors"
+              >
+                <Pause size={14} />
+                {pauseLoading ? 'Pausing...' : 'Pause All'}
+              </button>
+              <button
+                onClick={handleEStopAll}
+                className={`px-3 py-2 text-xs font-medium rounded-lg flex items-center gap-1.5 border transition-all ${
+                  estopPending
+                    ? 'bg-red-600 text-white border-red-400 animate-pulse'
+                    : 'bg-red-600/20 hover:bg-red-600/30 text-red-400 border-red-500/20'
+                }`}
+              >
+                <AlertTriangle size={14} />
+                {estopPending ? 'Confirm E-Stop All' : 'E-Stop All'}
+              </button>
+            </>
+          )}
           </button>
         </div>
       </div>

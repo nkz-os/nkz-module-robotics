@@ -34,6 +34,7 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
   const pointsRef = useRef<number[][]>([]);
   const polylineRef = useRef<any>(null);
   const handlerRef = useRef<any>(null);
+  const [pointCount, setPointCount] = useState(0);
 
   useEffect(() => {
     const Cesium = (window as any).Cesium;
@@ -42,6 +43,7 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
     if (drawing) {
       // Start drawing mode — collect points on LEFT_CLICK
       pointsRef.current = [];
+      setPointCount(0);
 
       handlerRef.current = new Cesium.ScreenSpaceEventHandler(cesiumViewer.scene.canvas);
       handlerRef.current.setInputAction((click: any) => {
@@ -52,6 +54,7 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
         const lon = Cesium.Math.toDegrees(cartographic.longitude);
         const lat = Cesium.Math.toDegrees(cartographic.latitude);
         pointsRef.current.push([lon, lat]);
+        setPointCount(pointsRef.current.length);
 
         // Update or create polyline preview
         if (polylineRef.current) {
@@ -127,6 +130,16 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
         </button>
       ) : (
         <div className="space-y-2 p-3 bg-slate-700/30 rounded-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              {pointCount > 0
+                ? `${pointCount} point${pointCount !== 1 ? 's' : ''} placed`
+                : 'Click on the map to place points'}
+            </span>
+            {pointCount >= 3 && (
+              <span className="text-xs text-emerald-400">✓ polygon ready</span>
+            )}
+          </div>
           <input
             type="text"
             placeholder={t('fleet.geofenceName')}

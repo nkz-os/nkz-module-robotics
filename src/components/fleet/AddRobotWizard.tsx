@@ -145,6 +145,11 @@ const AddRobotWizard: React.FC<AddRobotWizardProps> = ({ isOpen, onClose, onNavi
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition-colors"
                 autoFocus
               />
+              {name.trim() && (
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Robot ID: <span className="font-mono text-slate-400">{name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '')}</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">{t('wizard.type')}</label>
