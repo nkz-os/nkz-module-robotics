@@ -2,7 +2,6 @@ import './i18n';
 import React, { useState, useCallback } from 'react';
 import FleetDashboard from './components/fleet/FleetDashboard';
 import CockpitLayout from './components/cockpit/CockpitLayout';
-import './index.css';
 
 const RoboticsApp: React.FC = () => {
   const [view, setView] = useState<'fleet' | 'cockpit'>('fleet');

@@ -8,7 +8,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import RoboticsApp from './App';
-import './index.css';
 
 // Check if we're running standalone (not as federated module)
 const rootElement = document.getElementById('root');
