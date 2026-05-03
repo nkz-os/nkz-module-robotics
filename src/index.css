@@ -29,25 +29,28 @@
   min-width: 48px;
 }
 
-/* Leaflet — prevent Tailwind / host CSS from breaking tile positioning */
+/* Leaflet — isolate from host/Tailwind CSS that breaks tile positioning */
 .robotics-module .leaflet-container {
   background: #1e293b;
+  font: inherit;
 }
-.robotics-module .leaflet-container .leaflet-tile,
-.robotics-module .leaflet-container .leaflet-marker-icon,
-.robotics-module .leaflet-container .leaflet-marker-shadow,
-.robotics-module .leaflet-container .leaflet-tile-pane img,
-.robotics-module .leaflet-container .leaflet-overlay-pane img,
-.robotics-module .leaflet-container .leaflet-shadow-pane img,
-.robotics-module .leaflet-container img.leaflet-tile,
-.robotics-module .leaflet-container img.leaflet-image-layer {
+/* Reset Tailwind's *,::before,::after { box-sizing: border-box } for Leaflet internals */
+.robotics-module .leaflet-pane,
+.robotics-module .leaflet-tile,
+.robotics-module .leaflet-marker-icon,
+.robotics-module .leaflet-marker-shadow,
+.robotics-module .leaflet-tile-container,
+.robotics-module .leaflet-zoom-box,
+.robotics-module .leaflet-image-layer,
+.robotics-module .leaflet-layer {
   box-sizing: content-box;
+}
+/* Reset Tailwind's img { max-width: 100%; height: auto } for Leaflet tiles */
+.robotics-module .leaflet-tile {
   max-width: none !important;
   max-height: none !important;
+  visibility: hidden;
 }
-.robotics-module .leaflet-container .leaflet-tile-container {
-  box-sizing: content-box;
-}
-.robotics-module .leaflet-container .leaflet-pane {
-  z-index: auto;
+.robotics-module .leaflet-tile-loaded {
+  visibility: inherit;
 }
