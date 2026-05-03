@@ -54,6 +54,10 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
     mapRef.current = map;
     if (onViewerReady) onViewerReady(map);
 
+    // Fix tiles rendering at wrong scale — Leaflet needs a size recalculation
+    // after the container gets its final dimensions in the flex/grid layout.
+    setTimeout(() => map.invalidateSize(), 100);
+
     return () => {
       markersLayerRef.current.remove();
       map.remove();
@@ -105,8 +109,8 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
   return (
     <div
       ref={containerRef}
-      className="w-full h-96 rounded-xl overflow-hidden border border-slate-700"
-      style={{ background: '#1e293b' }}
+      className="w-full rounded-xl overflow-hidden border border-slate-700"
+      style={{ background: '#1e293b', height: '400px', minHeight: '400px' }}
     />
   );
 };
