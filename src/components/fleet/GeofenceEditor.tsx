@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Check } from 'lucide-react';
 import { useTranslation } from '@nekazari/sdk';
+import L from 'leaflet';
 import type { Geofence } from '../../types/robotics';
 
 interface GeofenceEditorProps {
@@ -12,105 +13,71 @@ interface GeofenceEditorProps {
   onDelete: (id: string) => void;
   onSelectGeofence: (id: string | null) => void;
   drawing: boolean;
-  cesiumViewer?: any;  // NEW
+  mapViewer?: L.Map | null;
 }
 
 const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
-  geofences,
-  activeGeofenceId,
-  onStartDrawing,
-  onSaveCurrent,
-  onCancelDrawing,
-  onDelete,
-  onSelectGeofence,
-  drawing,
-  cesiumViewer,
+  geofences, activeGeofenceId, onStartDrawing, onSaveCurrent, onCancelDrawing,
+  onDelete, onSelectGeofence, drawing, mapViewer,
 }) => {
   const { t } = useTranslation('robotics');
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'inclusion' | 'exclusion'>('inclusion');
-
-  // Cesium drawing state
-  const pointsRef = useRef<number[][]>([]);
-  const polylineRef = useRef<any>(null);
-  const handlerRef = useRef<any>(null);
   const [pointCount, setPointCount] = useState(0);
 
+  const pointsRef = useRef<L.LatLng[]>([]);
+  const previewLineRef = useRef<L.Polyline | null>(null);
+  const markersRef = useRef<L.CircleMarker[]>([]);
+
+  // Drawing mode with Leaflet
   useEffect(() => {
-    const Cesium = (window as any).Cesium;
-    if (!Cesium || !cesiumViewer || cesiumViewer.isDestroyed()) return;
-
-    if (drawing) {
-      // Start drawing mode — collect points on LEFT_CLICK
-      pointsRef.current = [];
-      setPointCount(0);
-
-      handlerRef.current = new Cesium.ScreenSpaceEventHandler(cesiumViewer.scene.canvas);
-      handlerRef.current.setInputAction((click: any) => {
-        const cartesian = cesiumViewer.scene.pickPosition(click.position);
-        if (!Cesium.defined(cartesian)) return;
-
-        const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-        const lon = Cesium.Math.toDegrees(cartographic.longitude);
-        const lat = Cesium.Math.toDegrees(cartographic.latitude);
-        pointsRef.current.push([lon, lat]);
-        setPointCount(pointsRef.current.length);
-
-        // Update or create polyline preview
-        if (polylineRef.current) {
-          cesiumViewer.entities.remove(polylineRef.current);
-        }
-
-        if (pointsRef.current.length > 1) {
-          polylineRef.current = cesiumViewer.entities.add({
-            polyline: {
-              positions: Cesium.Cartesian3.fromDegreesArray(
-                pointsRef.current.flat()
-              ),
-              width: 3,
-              material: new Cesium.PolylineDashMaterialProperty({
-                color: Cesium.Color.YELLOW,
-              }),
-              clampToGround: true,
-            },
-          });
-        }
-
-        // Add point marker
-        cesiumViewer.entities.add({
-          position: cartesian,
-          point: {
-            pixelSize: 8,
-            color: Cesium.Color.YELLOW,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-          },
-        });
-      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-    } else {
-      // Cleanup drawing mode
-      if (handlerRef.current) {
-        handlerRef.current.destroy();
-        handlerRef.current = null;
-      }
-      if (polylineRef.current && cesiumViewer && !cesiumViewer.isDestroyed()) {
-        cesiumViewer.entities.remove(polylineRef.current);
-        polylineRef.current = null;
-      }
+    const map = mapViewer;
+    if (!map || !drawing) {
+      // Cleanup
+      if (previewLineRef.current) { map?.removeLayer(previewLineRef.current); previewLineRef.current = null; }
+      markersRef.current.forEach(m => map?.removeLayer(m));
+      markersRef.current = [];
+      return;
     }
 
-    return () => {
-      if (handlerRef.current) handlerRef.current.destroy();
-      if (polylineRef.current && cesiumViewer && !cesiumViewer.isDestroyed()) {
-        cesiumViewer.entities.remove(polylineRef.current);
+    pointsRef.current = [];
+    setPointCount(0);
+
+    const onClick = (e: L.LeafletMouseEvent) => {
+      pointsRef.current.push(e.latlng);
+      setPointCount(pointsRef.current.length);
+
+      // Preview dot
+      const dot = L.circleMarker(e.latlng, {
+        radius: 5, color: '#EAB308', fillColor: '#EAB308', fillOpacity: 0.8, weight: 2,
+      }).addTo(map);
+      markersRef.current.push(dot);
+
+      // Update preview polyline
+      if (previewLineRef.current) map.removeLayer(previewLineRef.current);
+      if (pointsRef.current.length > 1) {
+        previewLineRef.current = L.polyline(pointsRef.current, {
+          color: '#EAB308', weight: 2, dashArray: '8 4', opacity: 0.8,
+        }).addTo(map);
       }
     };
-  }, [drawing, cesiumViewer]);
+
+    map.on('click', onClick);
+    map.getContainer().style.cursor = 'crosshair';
+
+    return () => {
+      map.off('click', onClick);
+      map.getContainer().style.cursor = '';
+      if (previewLineRef.current) { map.removeLayer(previewLineRef.current); previewLineRef.current = null; }
+      markersRef.current.forEach(m => map.removeLayer(m));
+      markersRef.current = [];
+    };
+  }, [drawing, mapViewer]);
 
   const handleSave = () => {
     if (newName.trim() && pointsRef.current.length >= 3) {
-      // Close the polygon by adding first point at the end
-      const closed = [...pointsRef.current, pointsRef.current[0]];
+      const coords = pointsRef.current.map(ll => [ll.lng, ll.lat] as [number, number]);
+      const closed = [...coords, coords[0]];
       onSaveCurrent(newName.trim(), newType, [closed]);
       setNewName('');
     }
@@ -123,7 +90,8 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
       {!drawing ? (
         <button
           onClick={onStartDrawing}
-          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+          disabled={!mapViewer}
+          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <Plus size={14} />
           {t('fleet.drawGeofence')}
@@ -137,7 +105,7 @@ const GeofenceEditor: React.FC<GeofenceEditorProps> = ({
                 : 'Click on the map to place points'}
             </span>
             {pointCount >= 3 && (
-              <span className="text-xs text-emerald-400">✓ polygon ready</span>
+              <span className="text-xs text-emerald-400">&#x2713; polygon ready</span>
             )}
           </div>
           <input
