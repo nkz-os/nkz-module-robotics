@@ -28,3 +28,26 @@
   min-height: 48px;
   min-width: 48px;
 }
+
+/* Leaflet — prevent Tailwind / host CSS from breaking tile positioning */
+.robotics-module .leaflet-container {
+  background: #1e293b;
+}
+.robotics-module .leaflet-container .leaflet-tile,
+.robotics-module .leaflet-container .leaflet-marker-icon,
+.robotics-module .leaflet-container .leaflet-marker-shadow,
+.robotics-module .leaflet-container .leaflet-tile-pane img,
+.robotics-module .leaflet-container .leaflet-overlay-pane img,
+.robotics-module .leaflet-container .leaflet-shadow-pane img,
+.robotics-module .leaflet-container img.leaflet-tile,
+.robotics-module .leaflet-container img.leaflet-image-layer {
+  box-sizing: content-box;
+  max-width: none !important;
+  max-height: none !important;
+}
+.robotics-module .leaflet-container .leaflet-tile-container {
+  box-sizing: content-box;
+}
+.robotics-module .leaflet-container .leaflet-pane {
+  z-index: auto;
+}
