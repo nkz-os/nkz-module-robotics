@@ -121,8 +121,8 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
   return (
     <div
       ref={containerRef}
-      className="w-full rounded-xl border border-slate-700"
-      style={{ background: '#1e293b', height: '400px', minHeight: '400px', cursor: 'grab' }}
+      className="w-full rounded-xl border border-slate-700 overflow-hidden"
+      style={{ background: '#1e293b', height: '400px', minHeight: '400px', cursor: 'grab', position: 'relative' }}
       onMouseDown={() => {
         if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
       }}
