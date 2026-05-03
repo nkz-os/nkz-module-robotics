@@ -1,73 +1,69 @@
 import React, { useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { RobotInfo } from '../../types/robotics';
 
 interface FleetMapProps {
   robots: RobotInfo[];
   onSelectRobot?: (id: string) => void;
-  routeGeometry?: any; // GeoJSON geometry for route overlay
-  onViewerReady?: (viewer: any) => void;  // NEW
+  routeGeometry?: any;
+  onViewerReady?: (map: L.Map) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
   AUTO: '#10B981',
   MANUAL: '#F59E0B',
   MONITOR: '#3B82F6',
+  ESTOP: '#EF4444',
 };
 
 function robotColor(robot: RobotInfo): string {
-  if (robot.operationMode === 'AUTO') return STATUS_COLORS.AUTO;
-  if (robot.operationMode === 'MANUAL') return STATUS_COLORS.MANUAL;
-  return STATUS_COLORS.MONITOR;
+  return STATUS_COLORS[robot.operationMode] || STATUS_COLORS.MONITOR;
 }
 
-function createArrowCanvas(color: string, headingDeg: number): HTMLCanvasElement {
-  const size = 32;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.save();
-  ctx.translate(size / 2, size / 2);
-  ctx.rotate(((headingDeg - 90) * Math.PI) / 180);
-
-  ctx.beginPath();
-  ctx.moveTo(0, -size / 2 + 2);
-  ctx.lineTo(size / 2 - 4, size / 4);
-  ctx.lineTo(0, size / 6);
-  ctx.lineTo(-size / 2 + 4, size / 4);
-  ctx.closePath();
-
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-
-  return canvas;
+function createArrowIcon(color: string, headingDeg: number): L.DivIcon {
+  const svg = `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+       style="transform:rotate(${headingDeg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">
+       <polygon points="12,0 24,20 12,14 0,20" fill="${color}" stroke="white" stroke-width="1.5"/></svg>`;
+  return L.divIcon({ html: svg, iconSize: [24, 24], iconAnchor: [12, 12], className: '' });
 }
 
 const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometry, onViewerReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup>(L.layerGroup());
+  const routeLineRef = useRef<L.Polyline | null>(null);
 
+  // Init map once
   useEffect(() => {
-    const Cesium = (window as any).Cesium;
-    if (!Cesium || !containerRef.current) return;
+    if (!containerRef.current || mapRef.current) return;
 
-    const viewer = new Cesium.Viewer(containerRef.current, {
-      animation: false,
-      timeline: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      geocoder: false,
-      homeButton: false,
-      navigationHelpButton: false,
-      sceneModePicker: false,
+    const map = L.map(containerRef.current, {
+      center: [42.5, -2.0],
+      zoom: 7,
+      zoomControl: true,
+      attributionControl: false,
     });
-    viewerRef.current = viewer;
-    if (onViewerReady) onViewerReady(viewer);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    markersLayerRef.current.addTo(map);
+    mapRef.current = map;
+    if (onViewerReady) onViewerReady(map);
+
+    return () => {
+      markersLayerRef.current.remove();
+      map.remove();
+      mapRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update markers when robots change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    markersLayerRef.current.clearLayers();
 
     robots.forEach(robot => {
       if (!robot.location?.coordinates) return;
@@ -75,63 +71,40 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       const color = robotColor(robot);
       const heading = (robot as any).heading_deg ?? 0;
 
-      viewer.entities.add({
-        id: robot.id,
-        position: Cesium.Cartesian3.fromDegrees(lon, lat),
-        billboard: {
-          image: createArrowCanvas(color, heading),
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-          scale: 0.8,
-        },
-        label: {
-          text: robot.name || robot.id,
-          font: '11px Inter, sans-serif',
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -20),
-        },
-      });
+      const marker = L.marker([lat, lon], { icon: createArrowIcon(color, heading) })
+        .bindTooltip(robot.name || robot.id, { direction: 'top', offset: [0, -18] });
+
+      if (onSelectRobot) marker.on('click', () => onSelectRobot(robot.id));
+      markersLayerRef.current.addLayer(marker);
     });
 
-    // Render route geometry if provided
-    if (routeGeometry && routeGeometry.type === 'LineString') {
-      const coords = routeGeometry.coordinates.map((c: number[]) =>
-        Cesium.Cartesian3.fromDegrees(c[0], c[1], c[2] || 0)
-      );
-      viewer.entities.add({
-        id: 'route-polyline',
-        polyline: {
-          positions: coords,
-          width: 3,
-          material: Cesium.Color.fromCssColorString('#F59E0B'),
-          clampToGround: true,
-        },
-      });
+    if (markersLayerRef.current.getLayers().length > 0) {
+      const group = L.featureGroup(markersLayerRef.current.getLayers() as L.Layer[]);
+      map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 15 });
     }
+  }, [robots, onSelectRobot]);
 
-    viewer.flyTo(viewer.entities);
+  // Update route line
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
 
-    if (onSelectRobot) {
-      const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-      handler.setInputAction((click: any) => {
-        const picked = viewer.scene.pick(click.position);
-        if (picked?.id?.id && onSelectRobot) {
-          onSelectRobot(picked.id.id);
-        }
-      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-      return () => {
-        handler.destroy();
-        viewer.destroy();
-      };
+    if (routeLineRef.current) { map.removeLayer(routeLineRef.current); routeLineRef.current = null; }
+
+    if (routeGeometry?.type === 'LineString' && routeGeometry.coordinates?.length > 1) {
+      const latlngs = routeGeometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]);
+      routeLineRef.current = L.polyline(latlngs, { color: '#F59E0B', weight: 3, opacity: 0.8 }).addTo(map);
+      map.fitBounds(routeLineRef.current.getBounds(), { padding: [20, 20] });
     }
+  }, [routeGeometry]);
 
-    return () => viewer.destroy();
-  }, [robots, onSelectRobot, routeGeometry]);
-
-  return <div ref={containerRef} className="w-full h-96 rounded-xl overflow-hidden border border-slate-700" />;
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-96 rounded-xl overflow-hidden border border-slate-700"
+      style={{ background: '#1e293b' }}
+    />
+  );
 };
 
 export default FleetMap;
