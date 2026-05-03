@@ -4,6 +4,10 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'process.env': JSON.stringify({}),
+  },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
@@ -38,6 +42,7 @@ export default defineConfig({
           '@nekazari/sdk': '__NKZ_SDK__',
           '@nekazari/ui-kit': '__NKZ_UI__',
         },
+        intro: 'var process = { env: {} };',
       },
     },
   },
