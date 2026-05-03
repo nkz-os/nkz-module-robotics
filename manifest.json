@@ -15,6 +15,11 @@
   "module_type": "ADDON_CORE",
   "required_plan_type": "free",
   "pricing_tier": "FREE",
+  "accent": {
+    "base": "#3B82F6",
+    "soft": "#DBEAFE",
+    "strong": "#1D4ED8"
+  },
   "route_path": "/robotics",
   "label": "Robotics",
   "icon": "cpu",
@@ -51,10 +56,57 @@
   },
   "slots": {
     "layer-toggle": [],
-    "context-panel": [],
+    "context-panel": [
+      {
+        "id": "robotics-context-panel",
+        "component": "RobotContextPanel",
+        "priority": 10,
+        "showWhen": {
+          "entityType": ["AgriRobot"]
+        }
+      }
+    ],
     "bottom-panel": [],
     "entity-tree": [],
-    "map-layer": []
+    "map-layer": [
+      {
+        "id": "robotics-map-layer",
+        "component": "RobotMapLayer",
+        "priority": 20,
+        "showWhen": {
+          "entityType": ["AgriRobot"]
+        }
+      }
+    ]
+  },
+  "surfaces": {
+    "web": {
+      "slots": {
+        "context-panel": [
+          {
+            "id": "robotics-context-panel",
+            "component": "RobotContextPanel",
+            "priority": 10,
+            "showWhen": {
+              "entityType": ["AgriRobot"]
+            }
+          }
+        ],
+        "map-layer": [
+          {
+            "id": "robotics-map-layer",
+            "component": "RobotMapLayer",
+            "priority": 20,
+            "showWhen": {
+              "entityType": ["AgriRobot"]
+            }
+          }
+        ],
+        "layer-toggle": [],
+        "bottom-panel": [],
+        "entity-tree": []
+      }
+    }
   },
   "metadata": {
     "icon": "🤖",

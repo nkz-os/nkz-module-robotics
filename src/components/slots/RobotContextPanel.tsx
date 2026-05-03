@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Battery, Activity, Crosshair } from 'lucide-react';
 import { useTranslation } from '@nekazari/sdk';
+import { SlotShellCompact } from '@nekazari/viewer-kit';
+import { Badge, Spinner, Button } from '@nekazari/ui-kit';
 import { roboticsApi } from '../../services/roboticsApi';
 import type { RobotInfo } from '../../types/robotics';
+
+const roboticsAccent = { base: '#3B82F6', soft: '#DBEAFE', strong: '#1D4ED8' };
 
 interface RobotContextPanelProps {
   entityId?: string | null;
@@ -64,7 +68,6 @@ const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEnt
 
   const openCockpit = () => {
     if (entityId) {
-      // Navigate to the module's cockpit view
       window.location.hash = `/robotics/${entityId}`;
     }
   };
@@ -72,10 +75,12 @@ const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEnt
   if (!entityId || entityId === 'null') return null;
   if (loading) {
     return (
-      <div className="p-4 text-center text-slate-500 text-sm">
-        <div className="w-5 h-5 border-2 border-slate-600 border-t-rose-500 rounded-full animate-spin mx-auto mb-2" />
-        Loading...
-      </div>
+      <SlotShellCompact moduleId="robotics" accent={roboticsAccent}>
+        <div className="flex items-center justify-center gap-2 py-nkz-stack">
+          <Spinner size="sm" />
+          <span className="text-nkz-sm text-nkz-text-secondary">{t('fleet.loading')}</span>
+        </div>
+      </SlotShellCompact>
     );
   }
   if (!robot) return null;
@@ -84,28 +89,30 @@ const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEnt
   const batteryStatus = batteryPct > 40 ? 'ok' : batteryPct > 15 ? 'warning' : 'critical';
   const mode = robot.operationMode || 'MONITOR';
   const modeColor =
-    mode === 'AUTO' ? 'text-emerald-400' :
-    mode === 'MANUAL' ? 'text-amber-400' :
-    'text-blue-400';
+    mode === 'AUTO' ? 'text-nkz-success' :
+    mode === 'MANUAL' ? 'text-nkz-warning' :
+    'text-nkz-info';
 
   return (
-    <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/50 rounded-xl p-4 space-y-3">
+    <SlotShellCompact moduleId="robotics" accent={roboticsAccent}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-white truncate">{robot.name || robot.id}</h3>
-        <span className={`text-xs font-bold ${modeColor}`}>{mode}</span>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-nkz-sm font-semibold text-nkz-text-primary truncate">{robot.name || robot.id}</h3>
+        <Badge intent={mode === 'AUTO' ? 'positive' : mode === 'MANUAL' ? 'warning' : 'info'} size="sm">
+          {mode}
+        </Badge>
       </div>
 
       {/* Battery bar */}
-      <div>
-        <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+      <div className="mb-2">
+        <div className="flex items-center justify-between text-nkz-xs text-nkz-text-muted mb-1">
           <span className="flex items-center gap-1"><Battery size={12} /> {t('fleet.battery')}</span>
           <span className="tabular-nums">{batteryPct}%</span>
         </div>
-        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-nkz-surface-sunken rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${
-              batteryStatus === 'critical' ? 'bg-red-500' : batteryStatus === 'warning' ? 'bg-amber-500' : 'bg-emerald-500'
+              batteryStatus === 'critical' ? 'bg-nkz-danger' : batteryStatus === 'warning' ? 'bg-nkz-warning' : 'bg-nkz-success'
             }`}
             style={{ width: `${batteryPct}%` }}
           />
@@ -114,8 +121,8 @@ const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEnt
 
       {/* GPS */}
       {robot.location && (
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <Crosshair size={12} className="text-slate-500" />
+        <div className="flex items-center gap-2 text-nkz-xs text-nkz-text-muted mb-1">
+          <Crosshair size={12} className="text-nkz-text-muted" />
           <span className="tabular-nums font-mono">
             {robot.location.coordinates[1].toFixed(5)}, {robot.location.coordinates[0].toFixed(5)}
           </span>
@@ -123,19 +130,21 @@ const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEnt
       )}
 
       {/* Last seen */}
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <Activity size={12} className="text-slate-500" />
+      <div className="flex items-center gap-2 text-nkz-xs text-nkz-text-muted mb-2">
+        <Activity size={12} className="text-nkz-text-muted" />
         <span>{robot.dateModified ? new Date(robot.dateModified).toLocaleTimeString() : '—'}</span>
       </div>
 
       {/* Open cockpit button */}
-      <button
+      <Button
+        variant="primary"
+        size="sm"
         onClick={openCockpit}
-        className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors"
+        className="w-full"
       >
         {t('fleet.openCockpit')}
-      </button>
-    </div>
+      </Button>
+    </SlotShellCompact>
   );
 };
 

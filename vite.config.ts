@@ -33,7 +33,7 @@ export default defineConfig({
       fileName: () => 'nekazari-module.js',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react-router-dom', '@nekazari/sdk', '@nekazari/ui-kit'],
+      external: ['react', 'react-dom', 'react-router-dom', '@nekazari/sdk', '@nekazari/ui-kit', '@nekazari/design-tokens', '@nekazari/viewer-kit'],
       output: {
         globals: {
           react: 'React',
@@ -41,6 +41,8 @@ export default defineConfig({
           'react-router-dom': 'ReactRouterDOM',
           '@nekazari/sdk': '__NKZ_SDK__',
           '@nekazari/ui-kit': '__NKZ_UI__',
+          '@nekazari/design-tokens': '__NKZ_DESIGN_TOKENS__',
+          '@nekazari/viewer-kit': '__NKZ_VIEWER_KIT__',
         },
         intro: 'var process = { env: {} };',
       },
