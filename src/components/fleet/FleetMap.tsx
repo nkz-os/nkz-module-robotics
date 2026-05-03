@@ -43,6 +43,9 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       zoom: 7,
       zoomControl: true,
       attributionControl: false,
+      scrollWheelZoom: false,  // zoom via buttons or double-click, not scroll
+      doubleClickZoom: true,
+      dragging: true,
     });
 
     // ESRI satellite — free, no token, global coverage
@@ -52,6 +55,11 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
     }).addTo(map);
     markersLayerRef.current.addTo(map);
     mapRef.current = map;
+
+    // Prevent scroll wheel from propagating to parent (stops "crazy mouse" effect)
+    L.DomEvent.on(containerRef.current!, 'wheel', L.DomEvent.stopPropagation);
+    L.DomEvent.on(containerRef.current!, 'touchstart', L.DomEvent.stopPropagation);
+
     if (onViewerReady) onViewerReady(map);
 
     // Fix tiles rendering at wrong scale — Leaflet needs a size recalculation
@@ -59,6 +67,10 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
     setTimeout(() => map.invalidateSize(), 100);
 
     return () => {
+      if (containerRef.current) {
+        L.DomEvent.off(containerRef.current, 'wheel', L.DomEvent.stopPropagation);
+        L.DomEvent.off(containerRef.current, 'touchstart', L.DomEvent.stopPropagation);
+      }
       markersLayerRef.current.remove();
       map.remove();
       mapRef.current = null;
@@ -109,8 +121,14 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
   return (
     <div
       ref={containerRef}
-      className="w-full rounded-xl overflow-hidden border border-slate-700"
-      style={{ background: '#1e293b', height: '400px', minHeight: '400px' }}
+      className="w-full rounded-xl border border-slate-700"
+      style={{ background: '#1e293b', height: '400px', minHeight: '400px', cursor: 'grab' }}
+      onMouseDown={() => {
+        if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
+      }}
+      onMouseUp={() => {
+        if (containerRef.current) containerRef.current.style.cursor = 'grab';
+      }}
     />
   );
 };
