@@ -45,7 +45,11 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       attributionControl: false,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    // ESRI satellite — free, no token, global coverage
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: '&copy; Esri',
+    }).addTo(map);
     markersLayerRef.current.addTo(map);
     mapRef.current = map;
     if (onViewerReady) onViewerReady(map);
