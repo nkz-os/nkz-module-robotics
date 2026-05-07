@@ -42,14 +42,14 @@ const VideoViewport: React.FC<VideoViewportProps> = ({ videoFrame, mode, latency
       )}
 
       {mode === 'MANUAL' && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 border border-white/20 rounded-full flex items-center justify-center pointer-events-none">
-          <div className="w-1 h-1 bg-white/50 rounded-full" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 border border-white rounded-full flex items-center justify-center pointer-events-none">
+          <div className="w-1 h-1 bg-white rounded-full" />
         </div>
       )}
 
       <div className="absolute top-4 right-4 flex items-center gap-3 text-xs font-mono">
         <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${
-          (latencyMs ?? 0) > 200 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+          (latencyMs ?? 0) > 200 ? 'bg-red-900 text-red-300' : 'bg-emerald-900 text-emerald-300'
         }`}>
           <span className={`w-1.5 h-1.5 rounded-full ${(latencyMs ?? 0) > 200 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
           LIVE {(latencyMs ?? 0) > 0 ? `${latencyMs}ms` : ''}
@@ -65,7 +65,7 @@ const VideoViewport: React.FC<VideoViewportProps> = ({ videoFrame, mode, latency
             key={cam}
             onClick={() => setActiveCamera(cam)}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              activeCamera === cam ? 'bg-rose-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700'
+              activeCamera === cam ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
             {cam === 0 ? t('cockpit.cameraFront') : cam === 1 ? t('cockpit.cameraRear') : t('cockpit.cameraImplement')}

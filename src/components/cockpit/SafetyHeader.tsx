@@ -31,7 +31,7 @@ const SafetyHeader: React.FC<SafetyHeaderProps> = ({
   }, [estopPending, onEStop]);
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 shrink-0">
+    <header className="h-16 flex items-center justify-between px-6 bg-slate-900 border-b border-slate-800 shrink-0">
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
           <span className={`block h-3 w-3 rounded-full ${latencyMs > 300 ? 'bg-[color:var(--nkz-critical)] animate-ping' : 'bg-[color:var(--nkz-ok)]'}`} />
