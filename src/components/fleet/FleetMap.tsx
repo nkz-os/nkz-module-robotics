@@ -33,6 +33,7 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup>(L.layerGroup());
   const routeLineRef = useRef<L.Polyline | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
   // Init map once
   useEffect(() => {
@@ -43,9 +44,11 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       zoom: 7,
       zoomControl: true,
       attributionControl: false,
-      scrollWheelZoom: false,  // zoom via buttons or double-click, not scroll
+      scrollWheelZoom: 'center',  // hold Ctrl/Cmd to zoom, otherwise scroll page
       doubleClickZoom: true,
       dragging: true,
+      touchZoom: true,
+      tap: true,
     });
 
     // ESRI satellite — free, no token, global coverage
@@ -53,23 +56,30 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
       maxZoom: 19,
       attribution: '&copy; Esri',
     }).addTo(map);
+
     markersLayerRef.current.addTo(map);
     mapRef.current = map;
 
-    // Prevent scroll wheel from propagating to parent (stops "crazy mouse" effect)
-    L.DomEvent.on(containerRef.current!, 'wheel', L.DomEvent.stopPropagation);
-    L.DomEvent.on(containerRef.current!, 'touchstart', L.DomEvent.stopPropagation);
+    // Prevent scroll wheel from zooming the map unless Ctrl is held.
+    // This prevents the "crazy mouse" effect when scrolling the page over the map.
+    L.DomEvent.disableScrollPropagation(containerRef.current);
 
     if (onViewerReady) onViewerReady(map);
 
-    // Fix tiles rendering at wrong scale — Leaflet needs a size recalculation
-    // after the container gets its final dimensions in the flex/grid layout.
-    setTimeout(() => map.invalidateSize(), 100);
+    // ResizeObserver ensures map always fills its container
+    observerRef.current = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    observerRef.current.observe(containerRef.current);
+
+    // Initial size fix after layout settles
+    const timer = setTimeout(() => map.invalidateSize(), 200);
 
     return () => {
-      if (containerRef.current) {
-        L.DomEvent.off(containerRef.current, 'wheel', L.DomEvent.stopPropagation);
-        L.DomEvent.off(containerRef.current, 'touchstart', L.DomEvent.stopPropagation);
+      clearTimeout(timer);
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
       }
       markersLayerRef.current.remove();
       map.remove();
@@ -121,13 +131,12 @@ const FleetMap: React.FC<FleetMapProps> = ({ robots, onSelectRobot, routeGeometr
   return (
     <div
       ref={containerRef}
-      className="w-full rounded-xl border border-slate-700 overflow-hidden"
-      style={{ background: '#1e293b', height: '400px', minHeight: '400px', cursor: 'grab', position: 'relative' }}
-      onMouseDown={() => {
-        if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
-      }}
-      onMouseUp={() => {
-        if (containerRef.current) containerRef.current.style.cursor = 'grab';
+      className="w-full rounded-xl border border-slate-700"
+      style={{
+        height: '400px',
+        background: '#1e293b',
+        cursor: 'grab',
+        contain: 'layout style',
       }}
     />
   );
