@@ -13,7 +13,10 @@ CONTEXT = [
 
 
 class OrionRobotClient:
-    """CRUD for AgriRobot entities in Orion-LD."""
+    """CRUD for AgriRobot entities in Orion-LD.
+
+"AgriRobot" resolves to nkz:AgriculturalRobot via @context alias (2026-05-08).
+"""
 
     def __init__(self, tenant_id: str):
         self.base = settings.ORION_URL.rstrip("/")
