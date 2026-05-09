@@ -2,9 +2,28 @@
 import logging
 from typing import Optional
 import httpx
+import re
+import os
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _make_headers(tenant_id: str) -> dict:
+    n = tenant_id.lower().strip().replace('-', '_').replace(' ', '_')
+    n = re.sub(r'[^a-z0-9_]', '', n)
+    n = n.strip('_') or tenant_id
+    headers = {
+        "NGSILD-Tenant": n,
+        "Fiware-Service": n,
+        "Fiware-ServicePath": "/",
+        "Accept": "application/ld+json",
+    }
+    ctx = os.getenv("CONTEXT_URL", "")
+    if ctx:
+        headers["Link"] = f'<{ctx}>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"'
+    return headers
+
 
 CONTEXT = [
     "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
@@ -22,15 +41,17 @@ class OrionRobotClient:
         self.base = settings.ORION_URL.rstrip("/")
         self.tenant = tenant_id
         self.headers = {
+            **_make_headers(tenant_id),
             "Content-Type": "application/ld+json",
-            "Accept": "application/ld+json",
-            "NGSILD-Tenant": tenant_id,
         }
 
     async def _req(self, method: str, path: str, json_data: Optional[dict] = None) -> Optional[dict]:
         url = f"{self.base}{path}"
+        req_headers = dict(self.headers)
+        if json_data and "@context" in json_data and "Link" in req_headers:
+            del req_headers["Link"]
         async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.request(method, url, json=json_data, headers=self.headers)
+            r = await client.request(method, url, json=json_data, headers=req_headers)
             if r.status_code in (200, 201, 204):
                 return r.json() if r.content else None
             logger.warning("Orion-LD %s %s -> %s: %s", method, path, r.status_code, r.text[:200])
