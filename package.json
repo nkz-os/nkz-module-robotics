@@ -4,10 +4,14 @@
   "description": "Robotics Cockpit & Telemetry Module for Nekazari Platform",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "main": "./src/moduleEntry.ts",
+  "main": "./src/Module.tsx",
+  "nkz": {
+    "moduleId": "robotics"
+  },
   "scripts": {
     "dev": "vite --port 5004",
     "build": "vite build",
+    "build:module": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -33,6 +37,7 @@
     "tailwindcss": "^3.4.4",
     "typescript": "^5.2.2",
     "vite": "^5.3.1",
-    "@nekazari/module-kit": "^0.1.0"
+    "@nekazari/module-kit": "^0.6.0",
+    "@nekazari/module-builder": "^2.0.0"
   }
 }
