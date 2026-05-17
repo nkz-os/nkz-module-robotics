@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-const API_BASE = (window.__ENV__?.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE = (typeof window !== 'undefined' ? window.__ENV__?.VITE_API_URL || '' : '').replace(/\/$/, '');
 const ROBOTICS_URL = `${API_BASE}/api/robotics`;
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
