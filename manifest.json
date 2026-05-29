@@ -4,6 +4,14 @@
   "display_name": "Robotics & Telemetry",
   "version": "1.0.0",
   "description": "Advanced Robotics Module for Nekazari Platform (Standard NKZ). Provided by Robotika.",
+  "description_i18n": {
+    "es": "Módulo Avanzado de Robótica para la Plataforma Nekazari (Standard NKZ). Proporcionado por Robotika.",
+    "en": "Advanced Robotics Module for Nekazari Platform (Standard NKZ). Provided by Robotika.",
+    "eu": "Robotika Aurreratuaren Modulua Nekazari Plataformarentzat (Standard NKZ). Robotikak hornitua.",
+    "fr": "Module de Robotique Avancée pour la Plateforme Nekazari (Standard NKZ). Fourni par Robotika.",
+    "pt": "Módulo Avançado de Robótica para a Plataforma Nekazari (Standard NKZ). Fornecido pela Robotika.",
+    "ca": "Mòdul Avançat de Robòtica per a la Plataforma Nekazari (Standard NKZ). Proporcionat per Robotika."
+  },
   "short_description": "Robotics control and telemetry via Zenoh",
   "author": {
     "name": "Robotika Engineering",
