@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/nkz-os/nkz-module-robotics/robotics-backend:latest
+          image: ghcr.io/nkz-os/nkz-module-robotics/robotics-backend@sha256:e03c96adadd929707ddcfa3071b02509189c2055e26447379d40e83d5be333dc
           imagePullPolicy: Always
           ports:
             - name: http
