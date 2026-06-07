@@ -79,7 +79,7 @@ class OrionRobotClient:
             "location": {"type": "GeoProperty", "value": {"type": "Point", "coordinates": [0, 0]}},
         }
         if parcel_id:
-            entity["refAgriParcel"] = {
+            entity["hasAgriParcel"] = {
                 "type": "Relationship",
                 "object": parcel_id if parcel_id.startswith("urn:") else f"urn:ngsi-ld:AgriParcel:{parcel_id}",
             }
