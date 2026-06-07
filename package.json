@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Robotics Cockpit & Telemetry Module for Nekazari Platform",
   "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@9.0.0",
   "type": "module",
   "main": "./src/Module.tsx",
   "nkz": {
