@@ -362,7 +362,11 @@ async def pause_all(request: Request):
 
 @router.post("/actions/estop-all")
 async def estop_all(request: Request):
-    """Emergency stop: cut traction on all tenant robots immediately."""
+    """Emergency soft stop: assert /safety/estop on every robot (edge contract).
+
+    Matches ROVER_NKZ CONTRATO: std_msgs/Bool on safety/estop → SW_ESTOP.
+    Zero cmd_vel alone is not enough if a guidance source still has mux priority.
+    """
     tenant_id = request.state.tenant_id
     client = get_orion_robots(tenant_id)
     robots = await client.list_robots()
@@ -372,19 +376,31 @@ async def estop_all(request: Request):
         rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
         if not rid:
             continue
-        # Send E-STOP via Zenoh
         try:
             from app.services.zenoh_client import robot_topic, put
-            await put(robot_topic(tenant_id, rid, "cmd_vel"), {
-                "linear": {"x": 0, "y": 0, "z": 0},
-                "angular": {"x": 0, "y": 0, "z": 0},
-                "estop": True,
-            }, timeout=1.0)
-            await put(robot_topic(tenant_id, rid, "mode"), {"value": "MONITOR"}, timeout=1.0)
+            # Edge system_monitor listens to /safety/estop (Bool).
+            await put(
+                robot_topic(tenant_id, rid, "safety/estop"),
+                {"data": True},
+                timeout=1.0,
+            )
+            await put(
+                robot_topic(tenant_id, rid, "cmd_vel"),
+                {
+                    "linear": {"x": 0, "y": 0, "z": 0},
+                    "angular": {"x": 0, "y": 0, "z": 0},
+                },
+                timeout=1.0,
+            )
+            await put(
+                robot_topic(tenant_id, rid, "mode"),
+                {"value": "ESTOP"},
+                timeout=1.0,
+            )
         except Exception:
             pass
-        await client.update_robot(rid, {"operationMode": "MONITOR"})
+        await client.update_robot(rid, {"operationMode": "ESTOP"})
         affected += 1
 
-    logger.warning("E-Stop All: %s robots emergency-stopped for tenant %s", affected, tenant_id)
+    logger.warning("E-Stop All: %s robots soft-stopped for tenant %s", affected, tenant_id)
     return {"action": "estop-all", "robots_affected": affected, "status": "ok"}

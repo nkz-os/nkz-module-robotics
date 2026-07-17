@@ -106,61 +106,89 @@ GET /api/robotics/fleet/robots/{id}/route?from=&to= → GeoJSON para overlay en 
 
 ---
 
-## GIS Routing — Path Planning
+## Field-Operations — Agronomic work queue (DECIDED)
 
-### Integración futura (fase 2)
-
-- GIS Routing genera waypoints y polígonos de cobertura para misiones
-- El módulo robotics carga estas rutas en `AgriRobotMission` (entidad NGSI-LD)
-- El cockpit muestra la ruta planificada vs trayectoria real en el visor de navegación
-
-### Geocercas compartidas
+**Field-Operations owns what labour is needed** (`AgriParcelOperation`: sowing,
+spraying, tillage, harvest, …). Crop-Health, Vegetation-Health, Soil, Weather and
+peers **advise** Field-Operations; they do **not** dispatch robots directly.
 
 ```
-Geofence (entidad NGSI-LD) → usado por GIS Routing para planificar rutas
-                            → usado por Robotics para alertas de entrada/salida
+Crop-Health / Vegetation / Soil / …  →  advise
+        ↓
+Field-Operations (AgriParcelOperation)
+        ↓
+GIS-Routing (route / coverage geometry)
+        ↓
+Robotics (AgriRobotMission + fleet assign + Zenoh dispatch)
+        ↓
+Edge rover (ROVER_NKZ executor) → actuals → FO completes operation
 ```
 
 ---
 
-## Vegetation Prime — Crop Monitoring
+## GIS Routing — Geometry input (not mission owner)
 
-### Interacción
+- GIS-Routing proposes **routes and coverage geometry** (paths, swath hints,
+  headland-aware products) for a Field-Operations job.
+- Robotics turns FO operation + GIS geometry into `AgriRobotMission`, assigns
+  robots, plans/replans under traversal policy, and dispatches via Zenoh.
+- GIS is **not** the mission lifecycle owner.
 
-- Vegetation Prime analiza índices de vegetación (NDVI, NDRE) por parcela
-- Si detecta zona con estrés hídrico o plaga → recomienda misión de pulverización
-- El módulo robotics recibe la misión y la asigna a un robot
+### Geofences
+
+```
+Geofence (NGSI-LD) → GIS-Routing (planning constraints)
+                  → Robotics (entry/exit alerts on fleet map)
+```
+
+---
+
+## Mode & soft E-Stop alignment (cloud ↔ rover)
+
+| Cloud `AgriRobot.operationMode` | Edge (ROVER_NKZ) | Notes |
+|---------------------------------|------------------|-------|
+| `MONITOR` | disarmed / idle | No motion authority |
+| `MANUAL` | `MANUAL` + armed | Teleop via Zenoh / cockpit |
+| `AUTO` | `AUTO` or active `FOLLOW` | Nav2 or person-follow |
+| (mission active) | `MISSION` | Prefer cloud property `activeMission` + edge mode `MISSION` |
+| `ESTOP` | SW_ESTOP | Must assert edge `/safety/estop` |
+
+Fleet `estop-all` must publish **`safety/estop = true`** (Bool) on the robot
+Zenoh namespace — same contract as the edge cockpit — not only zero `cmd_vel`.
+Clear with `safety/estop = false` when re-arming is intentional.
+
+---
+
+## Vegetation-Health / Crop-Health — Advisors only
+
+These modules publish agronomic state and risk. They may trigger **n8n / FO
+workflows** that create or update an `AgriParcelOperation`. They must not call
+robotics dispatch APIs as the primary path.
 
 ---
 
 ## Diagrama de integraciones
 
 ```
-                    ┌──────────────┐
-                    │    n8n       │ ← orquestador central
-                    └──┬───┬───┬──┘
-                       │   │   │
-          ┌────────────┼───┼───┼────────────┐
-          │            │   │   │            │
-          ▼            ▼   ▼   ▼            ▼
-    ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐
-    │  Odoo   │  │  Zulip  │  │ DataHub │  │   GIS    │
-    │  (ERP)  │  │ (Chat)  │  │  (BI)   │  │ (Routing)│
-    └────┬─────┘  └─────────┘  └────┬─────┘  └────┬─────┘
-         │                          │              │
-         └──────────────────────────┼──────────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────┐
-                          │    ROBOTICS     │
-                          │  (este módulo)  │
-                          └────────┬────────┘
-                                   │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-                    ▼              ▼              ▼
-              ┌─────────┐  ┌──────────┐  ┌──────────────┐
-              │  LiDAR  │  │Vegetation│  │    Otros     │
-              │(3D maps)│  │  Prime   │  │  (futuros)   │
-              └─────────┘  └──────────┘  └──────────────┘
+     Crop-Health / Vegetation / Soil / Weather
+                        │ advise
+                        ▼
+              ┌───────────────────┐
+              │ Field-Operations  │  AgriParcelOperation
+              └─────────┬─────────┘
+                        │
+            ┌───────────┼───────────┐
+            ▼           ▼           ▼
+         ┌─────┐   ┌─────────┐  ┌──────┐
+         │ GIS │   │  Odoo   │  │ n8n  │
+         │Route│   │  Zulip  │  │      │
+         └──┬──┘   └────┬────┘  └──┬───┘
+            │           │          │
+            └───────────┼──────────┘
+                        ▼
+              ┌─────────────────┐
+              │    ROBOTICS     │  AgriRobotMission + Zenoh
+              └────────┬────────┘
+                       ▼
+                 Edge rovers (BASABOT)
 ```
