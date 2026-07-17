@@ -11,8 +11,11 @@ data:
     {
       mode: "router",
       listen: {
+        // "tls/" (not "tcp/") is required for the configured cert/key below
+        // to actually terminate TLS — a plain "tcp/" listener ignores them
+        // and serves the transport in clear text.
         endpoints: [
-          "tcp/0.0.0.0:7447"
+          "tls/0.0.0.0:7447"
         ]
       },
       transport: {
@@ -21,7 +24,40 @@ data:
             listen_certificate: "/tls/tls.crt",
             listen_private_key: "/tls/tls.key"
           }
+        },
+        auth: {
+          // Per-TENANT static credentials (Zenoh 1.0 has no admin API for
+          // dynamic per-robot provisioning). dictionary_file is mounted
+          // from the zenoh-tenant-credentials Secret — one plaintext
+          // "tenant_id:password" line per tenant, provisioned manually (same operational pattern
+          // already used for zenoh-tls). See backend/app/services/zenoh_client.py
+          // for the reader; robotics-api never writes this file.
+          usrpwd: {
+            dictionary_file: "/credentials/credentials.txt"
+          }
         }
+      },
+      // Fail-closed by default: nothing is reachable until a tenant is
+      // explicitly provisioned below. To onboard tenant "<tenant_id>":
+      //   1. Add a line to the zenoh-tenant-credentials Secret (PLAINTEXT —
+      //      robotics-api reads this same file back to show the operator
+      //      the password once, at provisioning time; treat the Secret
+      //      with the same care as jwt-secret):
+      //      <tenant_id>:<generated password>
+      //   2. Add a subjects/rules/policies block here scoping that tenant
+      //      to nkz/<tenant_id>/** (Zenoh key-expr templates cannot
+      //      reference the authenticated username dynamically — each
+      //      tenant needs its own explicit block).
+      //   3. Restart zenoh-router (single replica — brief control-plane
+      //      outage for all connected robots of ALL tenants; acceptable at
+      //      pilot scale, revisit if the platform grows multi-tenant field
+      //      fleets concurrently).
+      access_control: {
+        enabled: true,
+        default_permission: "deny",
+        subjects: [],
+        rules: [],
+        policies: []
       },
       plugins: {
         rest: {

@@ -1,11 +1,11 @@
 """Fleet management endpoints — robot CRUD, geofences, route history."""
-import secrets
 import logging
 import httpx
 from fastapi import APIRouter, Request, HTTPException, Query
 from pydantic import BaseModel, Field
+from app.config import settings
 from app.services.orion_robots import get_orion_robots
-from app.services.zenoh_client import create_user, delete_user, set_acl
+from app.services.zenoh_client import get_tenant_credential
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,6 +49,23 @@ class ProvisionRobotResponse(BaseModel):
     ngsi_entity_id: str | None
 
 
+def _tenant_zenoh_credential(tenant_id: str) -> RobotCredentials:
+    """Look up this tenant's (not per-robot — see zenoh_client.py) Zenoh
+    credential. 503, not a fabricated credential, if it isn't provisioned."""
+    password = get_tenant_credential(tenant_id)
+    if password is None:
+        raise HTTPException(
+            503,
+            f"Zenoh credentials not provisioned for tenant {tenant_id} — "
+            "contact the platform admin (zenoh-tenant-credentials Secret).",
+        )
+    return RobotCredentials(
+        username=tenant_id,
+        password=password,
+        endpoint=settings.ZENOH_ROBOT_ENDPOINT,
+    )
+
+
 @router.get("/robots")
 async def list_robots(request: Request):
     tenant_id = request.state.tenant_id
@@ -76,21 +93,13 @@ async def register_robot(body: RegisterRobotBody, request: Request):
     if existing:
         raise HTTPException(409, f"Robot {body.robot_id} already exists")
 
+    credentials = _tenant_zenoh_credential(tenant_id)
     await client.create_robot(body.robot_id, body.name, body.robot_type, body.parcel_id)
-
-    username = f"robot-{tenant_id}-{body.robot_id}"
-    password = secrets.token_urlsafe(24)
-    await create_user(username, password)
-    await set_acl(username, [f"nkz/{tenant_id}/{body.robot_id}/**"], "pubsub")
 
     return RegisterRobotResponse(
         robot_id=body.robot_id,
         name=body.name,
-        credentials=RobotCredentials(
-            username=username,
-            password=password,
-            endpoint="tcp/zenoh-service.nekazari.svc.cluster.local:7447",
-        ),
+        credentials=credentials,
     )
 
 
@@ -113,8 +122,7 @@ async def decommission_robot(robot_id: str, request: Request):
     if not robot:
         raise HTTPException(404, f"Robot {robot_id} not found")
 
-    username = f"robot-{tenant_id}-{robot_id}"
-    await delete_user(username)
+    # Zenoh credentials are per-TENANT, not per-robot — nothing to revoke here.
     await client.delete_robot(robot_id)
     return {"status": "decommissioned"}
 
@@ -158,19 +166,25 @@ async def provision_robot(body: ProvisionRobotBody, request: Request):
     """
     Unified provisioning wizard:
     1. Validate Claim Code against VPN module
-    2. Generate Zenoh credentials
+    2. Look up this tenant's Zenoh credential
     3. Create/update AgriRobot in Orion-LD
     4. Consume Claim Code in VPN (final claim)
     5. Return all credentials
     """
     tenant_id = request.state.tenant_id
 
-    # Extract JWT from cookie for VPN auth
-    token = request.cookies.get("nkz_token", "")
-    if not token:
-        # Fallback to Authorization header
-        auth_header = request.headers.get("Authorization", "")
-        token = auth_header.removeprefix("Bearer ").strip()
+    # Forward the ALREADY-VERIFIED identity this request carried (set by
+    # tenant_middleware after HMAC verification) — not a re-extracted raw
+    # Bearer token. nkz-network-controller-service (VPN module) doesn't parse
+    # Bearer tokens at all; it trusts X-User-ID/X-User-Roles/X-Tenant-ID, the
+    # same headers the gateway injects. Forwarding the raw Authorization
+    # header here always 401'd against that service.
+    vpn_headers = {
+        "X-User-ID": request.state.user_id,
+        "X-User-Roles": ",".join(request.state.roles),
+        "X-Tenant-ID": tenant_id,
+        "Content-Type": "application/json",
+    }
 
     vpn_base = "http://nkz-network-controller-service/api/vpn"
 
@@ -180,11 +194,7 @@ async def provision_robot(body: ProvisionRobotBody, request: Request):
             validate_resp = await client.post(
                 f"{vpn_base}/devices/validate",
                 json={"device_uuid": body.device_uuid, "claim_code": body.claim_code},
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    "X-Tenant-ID": tenant_id,
-                },
+                headers=vpn_headers,
             )
             if validate_resp.status_code == 404:
                 raise HTTPException(404, f"Device {body.device_uuid} not found in VPN")
@@ -205,11 +215,10 @@ async def provision_robot(body: ProvisionRobotBody, request: Request):
                 "VPN module is not reachable. Activate the 'Device Management' module first.",
             )
 
-    # Step 2: Generate Zenoh credentials
-    username = f"robot-{tenant_id}-{body.robot_id}"
-    password = secrets.token_urlsafe(24)
-    await create_user(username, password)
-    await set_acl(username, [f"nkz/{tenant_id}/{body.robot_id}/**"], "pubsub")
+    # Step 2: Look up this tenant's Zenoh credential (fail BEFORE step 4 —
+    # consuming the one-time claim code on a tenant with no Zenoh credential
+    # provisioned would strand the operator with an unusable device).
+    credentials = _tenant_zenoh_credential(tenant_id)
 
     # Step 3: Create AgriRobot in Orion-LD
     client = get_orion_robots(tenant_id)
@@ -235,11 +244,7 @@ async def provision_robot(body: ProvisionRobotBody, request: Request):
             claim_resp = await client.post(
                 f"{vpn_base}/devices/claim",
                 json=claim_body,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    "X-Tenant-ID": tenant_id,
-                },
+                headers=vpn_headers,
             )
             if claim_resp.status_code == 200:
                 claim_data = claim_resp.json()
@@ -260,11 +265,7 @@ async def provision_robot(body: ProvisionRobotBody, request: Request):
         robot_id=body.robot_id,
         name=body.name,
         device_uuid=body.device_uuid,
-        credentials=RobotCredentials(
-            username=username,
-            password=password,
-            endpoint="tcp/zenoh-service.nekazari.svc.cluster.local:7447",
-        ),
+        credentials=credentials,
         tailscale_auth_key=tailscale_key,
         tailscale_login_server=login_server or "https://vpn.robotika.cloud",
         ngsi_entity_id=f"urn:ngsi-ld:AgriRobot:{body.robot_id}",
@@ -366,41 +367,50 @@ async def estop_all(request: Request):
 
     Matches ROVER_NKZ CONTRATO: std_msgs/Bool on safety/estop → SW_ESTOP.
     Zero cmd_vel alone is not enough if a guidance source still has mux priority.
+
+    Fail-safe reporting: this is an emergency endpoint, so a robot whose
+    Zenoh PUT failed must show up as failed, never silently folded into an
+    "ok" count — an operator seeing "5 robots stopped" must be able to trust
+    all 5 actually got the signal.
     """
     tenant_id = request.state.tenant_id
     client = get_orion_robots(tenant_id)
     robots = await client.list_robots()
 
-    affected = 0
+    from app.services.zenoh_client import robot_topic, put
+
+    succeeded: list[str] = []
+    failed: list[str] = []
     for robot in robots:
         rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
         if not rid:
             continue
         try:
-            from app.services.zenoh_client import robot_topic, put
-            # Edge system_monitor listens to /safety/estop (Bool).
-            await put(
-                robot_topic(tenant_id, rid, "safety/estop"),
-                {"data": True},
-                timeout=1.0,
-            )
-            await put(
-                robot_topic(tenant_id, rid, "cmd_vel"),
-                {
-                    "linear": {"x": 0, "y": 0, "z": 0},
-                    "angular": {"x": 0, "y": 0, "z": 0},
-                },
-                timeout=1.0,
-            )
-            await put(
-                robot_topic(tenant_id, rid, "mode"),
-                {"value": "ESTOP"},
-                timeout=1.0,
-            )
-        except Exception:
-            pass
+            # Edge system_monitor listens to /safety/estop (Bool) — this is
+            # the load-bearing PUT; mode/cmd_vel are best-effort extras.
+            await put(robot_topic(tenant_id, rid, "safety/estop"), {"data": True}, timeout=1.0)
+        except Exception as exc:
+            logger.error("E-Stop All: safety/estop PUT failed for %s: %s", rid, exc)
+            failed.append(rid)
+            await client.update_robot(rid, {"operationMode": "ESTOP"})
+            continue
+        for channel, payload in (
+            ("cmd_vel", {"linear": {"x": 0, "y": 0, "z": 0}, "angular": {"x": 0, "y": 0, "z": 0}}),
+            ("mode", {"value": "ESTOP"}),
+        ):
+            try:
+                await put(robot_topic(tenant_id, rid, channel), payload, timeout=1.0)
+            except Exception as exc:
+                logger.warning("E-Stop All: %s PUT failed for %s: %s", channel, rid, exc)
         await client.update_robot(rid, {"operationMode": "ESTOP"})
-        affected += 1
+        succeeded.append(rid)
 
-    logger.warning("E-Stop All: %s robots soft-stopped for tenant %s", affected, tenant_id)
-    return {"action": "estop-all", "robots_affected": affected, "status": "ok"}
+    if failed:
+        logger.error("E-Stop All: FAILED to reach %s for tenant %s", failed, tenant_id)
+    logger.warning("E-Stop All: %s robots soft-stopped for tenant %s", len(succeeded), tenant_id)
+    return {
+        "action": "estop-all",
+        "robots_affected": len(succeeded),
+        "robots_failed": failed,
+        "status": "ok" if not failed else "partial",
+    }

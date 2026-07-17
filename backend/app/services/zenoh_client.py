@@ -1,4 +1,14 @@
-"""Zenoh REST client — publish, subscribe SSE, manage ACLs."""
+"""Zenoh REST client — publish, subscribe SSE, and tenant credential lookup.
+
+Auth model: Zenoh 1.0's REST plugin has no admin API for dynamic user/ACL
+provisioning (confirmed against upstream docs — no /@/auth/user, /@/auth/acl).
+Auth is a static per-TENANT usrpwd dictionary configured directly on the
+router (zenoh-configmap.yaml's transport.auth.usrpwd.dictionary_file +
+access_control, mounted from the zenoh-tenant-credentials Secret). This
+backend only READS that same mounted file to hand a tenant's credential to
+an operator once, at robot provisioning time — it never creates or deletes
+Zenoh users.
+"""
 import json
 import logging
 from typing import AsyncGenerator, Optional
@@ -8,7 +18,6 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 REST_URL = settings.ZENOH_REST_URL.rstrip("/")
-ADMIN_AUTH = httpx.BasicAuth(settings.ZENOH_ADMIN_USER, settings.ZENOH_ADMIN_PASSWORD)
 
 
 def robot_topic(tenant_id: str, robot_id: str, channel: str) -> str:
@@ -57,42 +66,24 @@ async def is_reachable() -> bool:
         return False
 
 
-async def set_acl(username: str, topics: list[str], permission: str = "pubsub") -> bool:
-    """Configure ACL for a Zenoh user via Zenoh admin API."""
+def get_tenant_credential(tenant_id: str) -> Optional[str]:
+    """Read this tenant's Zenoh password from the mounted credentials file.
+
+    Returns None if the tenant has not been provisioned yet (fail-safe: the
+    caller must reject with a clear error, never fabricate a credential).
+    File format: one `tenant_id:password` per line, same file the router
+    reads via transport.auth.usrpwd.dictionary_file (see zenoh-configmap.yaml).
+    """
     try:
-        async with httpx.AsyncClient(timeout=5.0, auth=ADMIN_AUTH) as client:
-            for topic in topics:
-                payload = {"subject": topic, "action": permission, "user": username}
-                r = await client.post(f"{REST_URL}/@/auth/acl", json=payload)
-                if r.status_code >= 400:
-                    logger.error("ACL set failed for %s on %s: %s", username, topic, r.text)
-                    return False
-        return True
-    except Exception as e:
-        logger.error("ACL set error: %s", e)
-        return False
-
-
-async def create_user(username: str, password: str) -> bool:
-    """Create a Zenoh user for robot authentication."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0, auth=ADMIN_AUTH) as client:
-            r = await client.post(
-                f"{REST_URL}/@/auth/user",
-                json={"user": username, "password": password},
-            )
-            return r.status_code < 400
-    except Exception as e:
-        logger.error("Create user error: %s", e)
-        return False
-
-
-async def delete_user(username: str) -> bool:
-    """Delete a Zenoh user."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0, auth=ADMIN_AUTH) as client:
-            r = await client.delete(f"{REST_URL}/@/auth/user/{username}")
-            return r.status_code < 400
-    except Exception as e:
-        logger.error("Delete user error: %s", e)
-        return False
+        with open(settings.ZENOH_CREDENTIALS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or ":" not in line:
+                    continue
+                user, _, password = line.partition(":")
+                if user == tenant_id:
+                    return password
+    except OSError as exc:
+        logger.error("Cannot read Zenoh credentials file: %s", exc)
+        return None
+    return None

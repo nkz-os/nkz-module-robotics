@@ -1,8 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, HTTPException, Request
+from typing import Dict, Any, List
 from pydantic import BaseModel
 
+from app.config import settings
+
 router = APIRouter()
+
 
 class ZenohConfig(BaseModel):
     mode: str
@@ -10,45 +13,43 @@ class ZenohConfig(BaseModel):
     namespaces: Dict[str, str]
     safety: Dict[str, Any]
 
-@router.get("/devices/{robot_id}/config", response_model=ZenohConfig)
-async def get_robot_config(
-    robot_id: str, 
-    tenant_id: str = Query(..., description="The ID of the tenant owning the robot")
-):
+
+@router.get("/{robot_id}/config", response_model=ZenohConfig)
+async def get_robot_config(robot_id: str, request: Request):
     """
     Generate Zenoh configuration for a specific robot.
-    
+
     This includes:
-    - Connection endpoints (Zenoh Router)
-    - strict namespacing (nkz/{tenant_id}/{robot_id})
+    - Connection endpoint (Zenoh Router — ClusterIP, see ZENOH_ROBOT_ENDPOINT:
+      the in-cluster DNS name is NOT resolvable over the VPN, headscale has
+      magic_dns disabled)
+    - Strict namespacing (nkz/{tenant_id}/{robot_id})
     - Safety parameters (Watchdog timeout)
+
+    tenant_id comes from the gateway-verified auth context (tenant_middleware),
+    never from a caller-supplied param — a robot/operator authenticated for
+    tenant A must not be able to read tenant B's config by passing its id.
     """
-    
-    # 1. Namespacing Strategy
-    # All topics for this robot must be prefixed with: nkz/<tenant_id>/<robot_id>/
+    tenant_id = request.state.tenant_id
+    if not tenant_id:
+        raise HTTPException(401, "Missing tenant identification")
+
     base_prefix = f"nkz/{tenant_id}/{robot_id}"
-    
-    # 2. Connection Endpoints
-    # Primary: via VPN subnet router (internal service DNS)
-    # The Tailscale subnet router advertises the K8s service CIDR,
-    # so robots on the VPN can resolve and reach ClusterIP services directly.
-    router_endpoints = [
-        "tcp/zenoh-service.nekazari.svc.cluster.local:7447",
-    ] 
 
     return ZenohConfig(
         mode="client",
-        connect=router_endpoints,
+        connect=[settings.ZENOH_ROBOT_ENDPOINT],
         namespaces={
             "prefix": base_prefix,
             "cmd_vel": f"{base_prefix}/cmd_vel",
             "video": f"{base_prefix}/video",
             "telemetry": f"{base_prefix}/telemetry",
-            "heartbeat": f"{base_prefix}/heartbeat"
+            "heartbeat": f"{base_prefix}/heartbeat",
+            "safety_estop": f"{base_prefix}/safety/estop",
         },
         safety={
             "watchdog_timeout_ms": 1000,
             "watchdog_topic": f"{base_prefix}/heartbeat",
-            "safe_stop_behavior": "ramp_down_0.5s"
-        }
+            "safe_stop_behavior": "ramp_down_0.5s",
+        },
     )

@@ -6,6 +6,7 @@ import struct
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.zenoh_client import robot_topic, put, subscribe_sse, is_reachable
 from app.services.orion_robots import get_orion_robots
+from app.middleware.ws_auth import verify_websocket_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,22 +16,30 @@ router = APIRouter()
 async def control_ws(websocket: WebSocket, robot_id: str):
     await websocket.accept()
 
-    # Extract tenant_id from query params or cookies (WebSocket doesn't go through HTTP middleware)
-    tenant_id = websocket.query_params.get("tenant_id", "")
+    # The browser can't send X-Auth-Signature on a raw WS handshake, so this
+    # verifies the nkz_token cookie's RS256 signature directly against JWKS
+    # (mirrors nkz-module-eu-elevation's ws_auth.py). tenant_id comes from the
+    # VERIFIED claims — never from the old ?tenant_id= query param, which let
+    # any caller impersonate any tenant and teleoperate its robots.
+    token = websocket.cookies.get("nkz_token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing auth token")
+        return
+    try:
+        claims = verify_websocket_token(token)
+    except Exception as e:
+        await websocket.close(code=4001, reason=f"Invalid token: {e}")
+        return
+    tenant_id = claims.get("tenant_id") or claims.get("tenant", "")
     if not tenant_id:
-        token = websocket.cookies.get("nkz_token")
-        if token:
-            try:
-                import jwt
-                unverified = jwt.decode(token, options={"verify_signature": False})
-                tenant_id = unverified.get("tenant_id") or unverified.get("tenant", "")
-            except Exception:
-                pass
+        await websocket.close(code=4001, reason="Token missing tenant_id")
+        return
 
     topic_cmd = robot_topic(tenant_id, robot_id, "cmd_vel")
     topic_mode = robot_topic(tenant_id, robot_id, "mode")
     topic_heartbeat = robot_topic(tenant_id, robot_id, "heartbeat")
     topic_video = robot_topic(tenant_id, robot_id, "video")
+    topic_estop = robot_topic(tenant_id, robot_id, "safety/estop")
 
     video_task: asyncio.Task | None = None
 
@@ -66,8 +75,12 @@ async def control_ws(websocket: WebSocket, robot_id: str):
                 msg_type = msg.get("type", "")
 
                 if msg_type == "estop":
-                    # E-STOP is priority 0 — must be sent immediately
-                    # Use a fire-and-forget approach with minimal timeout
+                    # E-STOP is priority 0 — must be sent immediately.
+                    # Edge system_monitor's authoritative E-Stop is
+                    # /safety/estop (Bool) — MODULE_INTERACTIONS.md requires
+                    # this be asserted explicitly, not just a zeroed cmd_vel
+                    # (a guidance source could still hold mux priority).
+                    asyncio.create_task(put(topic_estop, {"data": True}, timeout=1.0))
                     asyncio.create_task(put(topic_cmd, {
                         "linear": {"x": 0, "y": 0, "z": 0},
                         "angular": {"x": 0, "y": 0, "z": 0},
@@ -79,13 +92,11 @@ async def control_ws(websocket: WebSocket, robot_id: str):
                     await put(topic_cmd, msg)
                 elif msg_type == "mode":
                     await put(topic_mode, {"value": msg.get("value")})
-                    # Claim/release control based on mode
-                    if tenant_id:
-                        orion = get_orion_robots(tenant_id)
-                        if msg.get("value") == "MANUAL":
-                            await orion.update_robot(robot_id, {"controlledBy": tenant_id, "operationMode": "MANUAL"})
-                        else:
-                            await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": msg.get("value", "MONITOR")})
+                    orion = get_orion_robots(tenant_id)
+                    if msg.get("value") == "MANUAL":
+                        await orion.update_robot(robot_id, {"controlledBy": tenant_id, "operationMode": "MANUAL"})
+                    else:
+                        await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": msg.get("value", "MONITOR")})
                 elif msg_type == "heartbeat":
                     await put(topic_heartbeat, {"ts": asyncio.get_event_loop().time()})
                 elif msg_type == "camera" and not video_task:
@@ -106,9 +117,8 @@ async def control_ws(websocket: WebSocket, robot_id: str):
         if video_task:
             video_task.cancel()
         # Release control on disconnect
-        if tenant_id:
-            try:
-                orion = get_orion_robots(tenant_id)
-                await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": "MONITOR"})
-            except Exception:
-                pass
+        try:
+            orion = get_orion_robots(tenant_id)
+            await orion.update_robot(robot_id, {"controlledBy": "", "operationMode": "MONITOR"})
+        except Exception:
+            pass

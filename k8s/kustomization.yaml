@@ -6,4 +6,4 @@ resources:
   - zenoh-deployment.yaml
   - zenoh-svc.yaml
   - zenoh-configmap.yaml
-  - ingressroute.yaml
+  # ingressroute.yaml intentionally NOT included — see its DISABLED header.

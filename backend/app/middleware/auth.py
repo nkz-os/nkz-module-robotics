@@ -1,38 +1,55 @@
-"""Auth middleware — extracts tenant_id from JWT cookie or header."""
+"""Auth middleware — extracts and verifies tenant identity from gateway headers.
+
+The api-gateway validates the user's JWT and injects X-Tenant-ID, X-User-ID,
+X-User-Roles, X-Auth-Signature on every proxied request (see
+services/common/keycloak_auth.py). This module trusts those headers ONLY
+after verifying X-Auth-Signature (fail-closed — see hmac.py); a request that
+reaches this service without a valid signature did not come through the
+gateway and is rejected, not silently treated as tenant_id="".
+"""
 import logging
-from typing import Optional
-import jwt
-from jwt import PyJWKClient
-from fastapi import Request, HTTPException, status
+from dataclasses import dataclass
+
+from fastapi import Request
+
 from app.config import settings
+from app.middleware.hmac import verify_gateway_hmac
 
 logger = logging.getLogger(__name__)
 
-_jwks_client: Optional[PyJWKClient] = None
+
+@dataclass(frozen=True)
+class AuthContext:
+    tenant_id: str
+    user_id: str
+    roles: tuple[str, ...]
 
 
-def _get_jwks() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        _jwks_client = PyJWKClient(settings.JWKS_URL)
-    return _jwks_client
+def _bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[len("Bearer "):]
+    return ""
 
 
-async def extract_tenant_id(request: Request) -> str:
-    """Extract tenant_id from nkz_token cookie or X-Tenant-ID header."""
-    token = request.cookies.get("nkz_token")
-    if token:
-        try:
-            unverified = jwt.decode(token, options={"verify_signature": False})
-            return unverified.get("tenant_id") or unverified.get("tenant", "")
-        except Exception:
-            pass
+def authenticate(request: Request) -> AuthContext | None:
+    """Return AuthContext on success, None on any auth failure (fail-closed)."""
+    tenant_id = request.headers.get("X-Tenant-ID", "").strip()
+    user_id = request.headers.get("X-User-ID", "").strip()
+    if not tenant_id or not user_id:
+        return None
 
-    tenant_id = request.headers.get("X-Tenant-ID", "")
-    if tenant_id:
-        return tenant_id
+    signature = request.headers.get("X-Auth-Signature", "")
+    token = _bearer_token(request)
+    if not verify_gateway_hmac(
+        signature,
+        token,
+        tenant_id,
+        secret=settings.HMAC_SECRET,
+        require=settings.REQUIRE_HMAC,
+    ):
+        return None
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Missing tenant identification",
-    )
+    roles_header = request.headers.get("X-User-Roles", "").strip()
+    roles = tuple(r.strip() for r in roles_header.split(",") if r.strip())
+    return AuthContext(tenant_id=tenant_id, user_id=user_id, roles=roles)

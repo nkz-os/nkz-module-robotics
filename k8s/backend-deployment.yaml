@@ -39,11 +39,21 @@ spec:
               value: "http://orion-ld-service:1026"
             - name: ZENOH_REST_URL
               value: "http://zenoh-service:8000"
-            - name: ZENOH_ADMIN_PASSWORD
+            # Zenoh 1.0 has no admin REST API for dynamic user/ACL provisioning
+            # (confirmed against upstream docs) — auth is a static per-tenant
+            # usrpwd dictionary, see zenoh-configmap.yaml + the
+            # zenoh-tenant-credentials volume mount below.
+            # ASSUMPTION: DNS (zenoh-service.nekazari.svc.cluster.local) is
+            # NOT resolvable over the VPN (headscale magic_dns is disabled).
+            # Override with the real zenoh-service ClusterIP before robots
+            # rely on this in the field; ask a cluster operator for it.
+            # - name: ZENOH_ROBOT_ENDPOINT
+            #   value: "tcp/<zenoh-service-cluster-ip>:7447"
+            - name: HMAC_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: zenoh-secret
-                  key: admin-password
+                  name: jwt-secret
+                  key: secret
             - name: KEYCLOAK_URL
               valueFrom:
                 configMapKeyRef:
@@ -64,6 +74,10 @@ spec:
                 configMapKeyRef:
                   name: platform-config
                   key: cors_origins
+          volumeMounts:
+            - name: zenoh-tenant-credentials
+              mountPath: /zenoh-credentials
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -83,3 +97,8 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+      volumes:
+        - name: zenoh-tenant-credentials
+          secret:
+            secretName: zenoh-tenant-credentials
+            optional: true
