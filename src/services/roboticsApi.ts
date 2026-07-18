@@ -91,8 +91,8 @@ export const roboticsApi = {
   },
 
   // -- Teleop config ----------------------------------------------------
-  getConfig: (robotId: string, tenantId: string): Promise<ZenohConfig> =>
-    apiFetch(`/teleop/${robotId}/config?tenant_id=${tenantId}`),
+  getConfig: (robotId: string): Promise<ZenohConfig> =>
+    apiFetch(`/fleet/robots/${robotId}/zenoh-config`),
 
   // -- SSE telemetry ----------------------------------------------------
   streamTelemetry(

@@ -14,7 +14,7 @@ class ZenohConfig(BaseModel):
     safety: Dict[str, Any]
 
 
-@router.get("/{robot_id}/config", response_model=ZenohConfig)
+@router.get("/robots/{robot_id}/zenoh-config", response_model=ZenohConfig)
 async def get_robot_config(robot_id: str, request: Request):
     """
     Generate Zenoh configuration for a specific robot.

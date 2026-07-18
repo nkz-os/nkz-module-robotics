@@ -9,9 +9,11 @@
 -- build the auto-proxy route table — without them every /api/robotics/*
 -- request 404s. This INSERT is now idempotent with
 -- nkz/config/timescaledb/migrations/092_module_auto_proxy_routing.sql (keep
--- both in sync if either changes; 092 is a JSONB merge, this is a full
--- replace, so re-running THIS file used to silently wipe 092's routing keys
--- when they weren't listed here too).
+-- both in sync if either changes). The ON CONFLICT below MERGES into the
+-- existing metadata column (jsonb ||), matching the platform convention used
+-- by entity-manager's publish pipeline (services/entity-manager/blueprints/
+-- modules.py) and migration 092 — so re-running this file no longer wipes
+-- sibling keys like description_i18n/slots/hostApiVersion.
 -- =============================================================================
 
 INSERT INTO marketplace_modules (
@@ -42,7 +44,7 @@ INSERT INTO marketplace_modules (
     description = EXCLUDED.description,
     remote_entry_url = EXCLUDED.remote_entry_url,
     version = EXCLUDED.version,
-    metadata = EXCLUDED.metadata,
+    metadata = COALESCE(marketplace_modules.metadata, '{}'::jsonb) || EXCLUDED.metadata,
     module_type = EXCLUDED.module_type,
     route_path = EXCLUDED.route_path,
     label = EXCLUDED.label,
