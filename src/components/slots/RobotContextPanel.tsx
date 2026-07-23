@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Battery, Activity, Crosshair } from 'lucide-react';
-import { useTranslation } from '@nekazari/sdk';
+import { useTranslation, useViewer } from '@nekazari/sdk';
 import { SlotShellCompact } from '@nekazari/viewer-kit';
 import { Badge, Spinner, Button } from '@nekazari/ui-kit';
 import { roboticsApi } from '../../services/roboticsApi';
@@ -8,39 +8,16 @@ import type { RobotInfo } from '../../types/robotics';
 
 const roboticsAccent = { base: '#3B82F6', soft: '#DBEAFE', strong: '#1D4ED8' };
 
-interface RobotContextPanelProps {
-  entityId?: string | null;
-  entityType?: string;
-}
-
-const RobotContextPanel: React.FC<RobotContextPanelProps> = ({ entityId: propEntityId, entityType: propEntityType }) => {
+// The host's context-panel slot never passes flat props or dispatches a
+// 'nekazari:entity-selected' window event (confirmed absent from the host
+// entirely) - this reads the selection via useViewer() instead. The slot's
+// own showWhen: { entityType: ['AgriRobot'] } already guarantees this only
+// renders for the right entity type.
+const RobotContextPanel: React.FC = () => {
   const { t } = useTranslation('robotics');
+  const { selectedEntityId: entityId } = useViewer();
   const [robot, setRobot] = useState<RobotInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const [entityId, setEntityId] = useState<string | null>(propEntityId ?? null);
-
-  // Listen for entity selection events from the host
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ entityId: string | null; type?: string }>).detail;
-      if (detail && detail.type === 'AgriRobot') {
-        setEntityId(detail.entityId);
-      } else if (!detail || !detail.entityId) {
-        setEntityId(null);
-        setRobot(null);
-      }
-    };
-
-    window.addEventListener('nekazari:entity-selected', handler);
-    return () => window.removeEventListener('nekazari:entity-selected', handler);
-  }, []);
-
-  // Also accept props (for direct slot injection without events)
-  useEffect(() => {
-    if (propEntityId && propEntityType === 'AgriRobot') {
-      setEntityId(propEntityId);
-    }
-  }, [propEntityId, propEntityType]);
 
   // Fetch robot when entityId changes
   useEffect(() => {
