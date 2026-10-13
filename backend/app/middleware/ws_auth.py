@@ -37,3 +37,21 @@ def verify_websocket_token(token: str) -> dict:
         issuer=settings.JWT_ISSUER,
         options={"verify_aud": False},
     )
+
+
+def allowed_origins() -> list[str]:
+    """Origins the UI is served from (the same CORS_ORIGINS the HTTP middleware uses)."""
+    return [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+
+
+def origin_allowed(origin: Optional[str], allowed: list[str]) -> bool:
+    """Gate a WebSocket handshake on the page Origin.
+
+    Browsers always send it and scripts cannot forge it; without this check a
+    page on a sibling subdomain (same-site, so the session cookie travels with
+    the handshake) could open the teleoperation socket. Non-browser clients
+    send no Origin and carry no ambient cookie, so they pass.
+    """
+    if origin is None:
+        return True
+    return origin in allowed

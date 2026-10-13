@@ -6,7 +6,7 @@ import struct
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.zenoh_client import robot_topic, put, subscribe_sse, is_reachable
 from app.services.orion_robots import get_orion_robots
-from app.middleware.ws_auth import verify_websocket_token
+from app.middleware.ws_auth import allowed_origins, origin_allowed, verify_websocket_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,6 +15,10 @@ router = APIRouter()
 @router.websocket("/{robot_id}/control")
 async def control_ws(websocket: WebSocket, robot_id: str):
     await websocket.accept()
+
+    if not origin_allowed(websocket.headers.get("origin"), allowed_origins()):
+        await websocket.close(code=4003, reason="Origin not allowed")
+        return
 
     # The browser can't send X-Auth-Signature on a raw WS handshake, so this
     # verifies the nkz_token cookie's RS256 signature directly against JWKS
