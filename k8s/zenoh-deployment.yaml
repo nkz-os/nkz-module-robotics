@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zenoh-router
+  namespace: nekazari
+  labels:
+    app: zenoh-router
+    module: robotics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zenoh-router
+  template:
+    metadata:
+      labels:
+        app: zenoh-router
+        module: robotics
+    spec:
+      containers:
+        - name: zenoh-router
+          image: eclipse/zenoh:1.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config"
+            - "/config/zenoh.json5"
+          ports:
+            - containerPort: 7447
+              name: tcp
+              protocol: TCP
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: credentials
+              mountPath: /credentials
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: zenoh-config
+        - name: tls
+          secret:
+            secretName: zenoh-tls
+        - name: credentials
+          secret:
+            secretName: zenoh-tenant-credentials
+            optional: true
