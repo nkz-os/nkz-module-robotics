@@ -1,279 +1,145 @@
-import React, { useState, useCallback } from 'react';
-import { Search, Plus, Layers, Grid3X3, List, Pause, AlertTriangle } from 'lucide-react';
-import { useTranslation } from '@nekazari/sdk';
+import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useAuth } from '@nekazari/sdk';
+import { Badge, Button, Card, EmptyState, Inline, Spinner, Stack } from '@nekazari/ui-kit';
+import { Bot, KeyRound, OctagonX, Trash2 } from 'lucide-react';
 import { useFleet } from '../../hooks/useFleet';
-import RobotCard from './RobotCard';
-import FleetMap from './FleetMap';
-import FleetTable from './FleetTable';
-import GeofenceEditor from './GeofenceEditor';
-import RouteHistory from './RouteHistory';
-import AddRobotWizard from './AddRobotWizard';
-import { roboticsApi } from '../../services/roboticsApi';
-import type { Geofence } from '../../types/robotics';
+import { ApiError, roboticsApi } from '../../services/roboticsApi';
+import type { FleetRobot } from '../../types/robotics';
+import { heartbeatKey } from '../../lib/format';
+import { EnrollRobot } from './EnrollRobot';
 
-interface FleetDashboardProps {
-  onOpenCockpit: (id: string) => void;
+interface Props {
+  onOpen: (robot: FleetRobot) => void;
 }
 
-type FilterKey = 'all' | 'warnings' | 'stopped' | 'no_comms';
-
-const FleetDashboard: React.FC<FleetDashboardProps> = ({ onOpenCockpit }) => {
+export const FleetDashboard: React.FC<Props> = ({ onOpen }) => {
   const { t } = useTranslation('robotics');
-  const { robots, refresh } = useFleet();
-  const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
-  const [selectedRobotId, setSelectedRobotId] = useState<string | null>(null);
-  const [routeGeometry, setRouteGeometry] = useState<any>(null);
-  const [geofences, setGeofences] = useState<Geofence[]>([]);
-  const [drawingGeofence, setDrawingGeofence] = useState(false);
-  const [activeGeofenceId, setActiveGeofenceId] = useState<string | null>(null);
-  const [pauseLoading, setPauseLoading] = useState(false);
-  const [estopPending, setEstopPending] = useState(false);
-  const [estopResult, setEstopResult] = useState<string | null>(null);
-  const [mapViewer, setMapViewer] = useState<any>(null);
-  const [showWizard, setShowWizard] = useState(false);
+  const auth = useAuth();
+  const isAdmin = auth.hasAnyRole(['TenantAdmin', 'PlatformAdmin']);
+  const { data, error, refresh } = useFleet();
+  const [enrolling, setEnrolling] = useState<{ robot: FleetRobot; mode: 'enroll' | 'rotate' } | null>(null);
+  const [arming, setArming] = useState(false);
+  const [allResult, setAllResult] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
-  // Filters
-  const FILTERS: { key: FilterKey; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'warnings', label: '⚠ Warnings' },
-    { key: 'stopped', label: 'Stopped' },
-    { key: 'no_comms', label: 'No comms > 30s' },
-  ];
-
-  const now = Date.now();
-  const noCommsThreshold = 30_000; // 30 seconds
-
-  const filtered = robots.filter(r => {
-    const matchesSearch = (r.name || r.id).toLowerCase().includes(search.toLowerCase());
-    const mode = r.operationMode || 'MONITOR';
-    const lastSeen = r.dateModified ? new Date(r.dateModified).getTime() : 0;
-    const commsLost = now - lastSeen > noCommsThreshold;
-
-    if (!matchesSearch) return false;
-    switch (activeFilter) {
-      case 'warnings': return mode === 'MANUAL' || (r.battery ?? 0) < 20;
-      case 'stopped': return mode === 'MONITOR' || mode === 'ESTOP';
-      case 'no_comms': return commsLost;
-      default: return true;
-    }
-  });
-
-  // Sort: alerts first → stopped → running → idle
-  const sorted = [...filtered].sort((a, b) => {
-    const order: Record<string, number> = { ESTOP: 0, MANUAL: 0, MONITOR: 1, AUTO: 2 };
-    const aOrder = order[a.operationMode || 'MONITOR'] ?? 3;
-    const bOrder = order[b.operationMode || 'MONITOR'] ?? 3;
-    if (aOrder !== bOrder) return aOrder - bOrder;
-    // Within same group, lower battery first
-    return (a.battery ?? 0) - (b.battery ?? 0);
-  });
-
-  const handleRouteLoaded = useCallback((geometry: any) => {
-    setRouteGeometry(geometry);
-  }, []);
-
-  const handleStartDrawing = () => setDrawingGeofence(true);
-  const handleCancelDrawing = () => setDrawingGeofence(false);
-
-  const handleSaveGeofence = (name: string, type: 'inclusion' | 'exclusion', coordinates: number[][][]) => {
-    const newFence: Geofence = {
-      id: `gf-${Date.now()}`,
-      name,
-      type,
-      geometry: { type: 'Polygon', coordinates },
-      active: true,
-    };
-    setGeofences([...geofences, newFence]);
-    setDrawingGeofence(false);
-  };
-
-  const handleDeleteGeofence = (id: string) => {
-    setGeofences(geofences.filter(g => g.id !== id));
-    if (activeGeofenceId === id) setActiveGeofenceId(null);
-  };
-
-  const handlePauseAll = async () => {
-    setPauseLoading(true);
+  const estopAll = async () => {
+    setArming(false);
     try {
-      const result = await roboticsApi.pauseAll();
-      setEstopResult(`${result.robots_affected} robots paused`);
-      setTimeout(() => setEstopResult(null), 5000);
-      refresh();
-    } catch (err: any) {
-      setEstopResult(`Error: ${err.message}`);
-      setTimeout(() => setEstopResult(null), 5000);
-    } finally {
-      setPauseLoading(false);
+      const r = await roboticsApi.estopAll();
+      setAllResult(t('fleet.estopAllResult', { sent: r.results.length, failed: r.failed.length }));
+    } catch (e: unknown) {
+      setAllResult(t(e instanceof ApiError && e.status === 503 ? 'estop.linkDown' : 'estop.failed'));
     }
   };
 
-  const handleEStopAll = async () => {
-    if (!estopPending) {
-      setEstopPending(true);
-      setTimeout(() => setEstopPending(false), 5000);
-      return;
-    }
-    setEstopPending(false);
+  // Two steps: removing a robot cuts its platform link (and restarts the shared router).
+  const unenroll = async (robot: FleetRobot) => {
+    setRemoving(null);
+    setRemoveError(null);
     try {
-      const result = await roboticsApi.estopAll();
-      setEstopResult(`E-STOP: ${result.robots_affected} robots stopped`);
-      setTimeout(() => setEstopResult(null), 8000);
-      refresh();
-    } catch (err: any) {
-      setEstopResult(`Error: ${err.message}`);
-      setTimeout(() => setEstopResult(null), 5000);
+      await roboticsApi.unenroll(robot.device_uuid);
+    } catch (e: unknown) {
+      setRemoveError(t('fleet.unenrollFailed', { name: robot.name, status: e instanceof ApiError ? e.status : '—' }));
     }
+    refresh();
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Layers className="text-rose-500" />
-          {t('fleet.title')}
-        </h1>
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              placeholder={t('fleet.searchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 w-56"
-            />
-          </div>
-
-          {/* View toggle */}
-          <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`p-2 rounded ${viewMode === 'cards' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Grid3X3 size={14} />
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 rounded ${viewMode === 'table' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <List size={14} />
-            </button>
-          </div>
-
-          {/* Register + refresh */}
-          <button
-            onClick={() => setShowWizard(true)}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <Plus size={16} />
-            {t('fleet.registerRobot')}
-          </button>
-
-          {/* Global actions — only visible when there are robots */}
-          {robots.length > 0 && (
+    <Stack gap="section">
+      <Inline justify="between" align="center" wrap>
+        <Inline gap="stack" align="center">
+          <Bot size={24} />
+          <Stack gap="tight">
+            <span className="text-nkz-xl font-semibold text-nkz-text-primary">{t('fleet.title')}</span>
+            <span className="text-nkz-sm text-nkz-text-secondary">{t('fleet.subtitle')}</span>
+          </Stack>
+        </Inline>
+        <Inline gap="inline" align="center">
+          {data && !data.link_up && <Badge intent="negative">{t('live.linkDown')}</Badge>}
+          {arming ? (
             <>
-              <button
-                onClick={handlePauseAll}
-                disabled={pauseLoading}
-                className="px-3 py-2 bg-amber-600/20 hover:bg-amber-600/30 disabled:opacity-50 text-amber-400 text-xs font-medium rounded-lg flex items-center gap-1.5 border border-amber-500/20 transition-colors"
-              >
-                <Pause size={14} />
-                {pauseLoading ? 'Pausing...' : 'Pause All'}
-              </button>
-              <button
-                onClick={handleEStopAll}
-                className={`px-3 py-2 text-xs font-medium rounded-lg flex items-center gap-1.5 border transition-all ${
-                  estopPending
-                    ? 'bg-red-600 text-white border-red-400 animate-pulse'
-                    : 'bg-red-600/20 hover:bg-red-600/30 text-red-400 border-red-500/20'
-                }`}
-              >
-                <AlertTriangle size={14} />
-                {estopPending ? 'Confirm E-Stop All' : 'E-Stop All'}
-              </button>
+              <Button variant="danger" onClick={estopAll} leadingIcon={<OctagonX size={16} />}>
+                {t('fleet.estopAllConfirm')}
+              </Button>
+              <Button variant="ghost" onClick={() => setArming(false)}>{t('estop.cancel')}</Button>
             </>
+          ) : (
+            <Button variant="danger" onClick={() => setArming(true)} leadingIcon={<OctagonX size={16} />}>
+              {t('fleet.estopAll')}
+            </Button>
           )}
-        </div>
-      </div>
+        </Inline>
+      </Inline>
+      {allResult && <span className="text-nkz-sm text-nkz-text-secondary">{allResult}</span>}
+      {removeError && <span className="text-nkz-sm text-nkz-danger">{removeError}</span>}
 
-      {/* Quick filters */}
-      <div className="flex gap-2">
-        {FILTERS.map(f => (
-          <button
-            key={f.key}
-            onClick={() => setActiveFilter(f.key)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              activeFilter === f.key
-                ? 'bg-rose-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-        <span className="text-xs text-slate-600 self-center ml-2">{sorted.length} robots</span>
-        {estopResult && (
-          <span className="text-xs text-slate-300 self-center ml-2 bg-slate-800 px-2 py-0.5 rounded">{estopResult}</span>
-        )}
-      </div>
-
-      {/* Robot list: cards or table */}
-      {sorted.length === 0 ? (
-        <div className="text-center py-20 text-slate-500">
-          <Layers size={48} className="mx-auto mb-4 opacity-30" />
-          <p className="text-lg">{t('fleet.noRobots')}</p>
-          <p className="text-sm mt-2">{t('fleet.noRobotsHint')}</p>
-        </div>
-      ) : viewMode === 'table' ? (
-        <FleetTable robots={sorted} onOpenCockpit={onOpenCockpit} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {sorted.map(robot => (
-            <RobotCard key={robot.id} robot={robot} onOpenCockpit={onOpenCockpit} />
-          ))}
-        </div>
+      {enrolling && (
+        <EnrollRobot uuid={enrolling.robot.device_uuid} name={enrolling.robot.name} mode={enrolling.mode}
+          onClose={() => {
+            setEnrolling(null);
+            refresh();
+          }} />
       )}
 
-      {/* Map + Sidebar */}
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <FleetMap
-            robots={sorted}
-            onSelectRobot={setSelectedRobotId}
-            routeGeometry={routeGeometry}
-            onViewerReady={setMapViewer}
-          />
-        </div>
-        <div className="w-64 space-y-4">
-          <GeofenceEditor
-            geofences={geofences}
-            activeGeofenceId={activeGeofenceId}
-            onStartDrawing={handleStartDrawing}
-            onSaveCurrent={handleSaveGeofence}
-            onCancelDrawing={handleCancelDrawing}
-            onDelete={handleDeleteGeofence}
-            onSelectGeofence={setActiveGeofenceId}
-            drawing={drawingGeofence}
-            mapViewer={mapViewer}
-          />
-          <RouteHistory
-            robotId={selectedRobotId}
-            onRouteLoaded={handleRouteLoaded}
-          />
-        </div>
-      </div>
+      {!data && error === null && <Spinner />}
+      {error !== null && <EmptyState title={t('fleet.loadError')}
+        action={<Button variant="secondary" onClick={refresh}>{t('common.retry')}</Button>} />}
+      {data && data.robots.length === 0 && <EmptyState title={t('fleet.empty')} description={t('fleet.emptyHint')} />}
 
-      <AddRobotWizard
-        isOpen={showWizard}
-        onClose={() => setShowWizard(false)}
-        onNavigateToCockpit={onOpenCockpit}
-      />
-    </div>
+      {data && data.robots.length > 0 && (
+        <Stack gap="inline">
+          {data.robots.map((robot) => {
+            const hb = heartbeatKey(robot.live);
+            return (
+              <Card key={robot.device_uuid} padding="sm">
+                <Inline justify="between" align="center" wrap>
+                  <Stack gap="tight">
+                    <span className="text-nkz-sm font-semibold text-nkz-text-primary">{robot.name}</span>
+                    <span className="text-nkz-xs font-mono text-nkz-text-secondary break-all">{robot.device_uuid}</span>
+                  </Stack>
+                  <Inline gap="inline" align="center" wrap>
+                    {robot.enrollment ? (
+                      <Badge intent={robot.enrollment.state === 'active' ? 'positive' : 'warning'}>
+                        {t(`enrollment.${robot.enrollment.state}`)}
+                      </Badge>
+                    ) : (
+                      <Badge>{t('enrollment.none')}</Badge>
+                    )}
+                    {robot.enrollment && (
+                      <Badge intent={robot.live?.online ? 'positive' : 'default'}>{t(hb.key, { n: 'n' in hb ? hb.n : 0 })}</Badge>
+                    )}
+                    {robot.live?.mode && <Badge intent="info">{t(`mode.${robot.live.mode}`)}</Badge>}
+                    {robot.enrollment && <Button size="sm" onClick={() => onOpen(robot)}>{t('fleet.open')}</Button>}
+                    {isAdmin && !robot.enrollment && (
+                      <Button size="sm" variant="secondary" onClick={() => setEnrolling({ robot, mode: 'enroll' })}>
+                        {t('fleet.enroll')}
+                      </Button>
+                    )}
+                    {isAdmin && robot.enrollment && (
+                      <>
+                        <Button size="sm" variant="ghost" leadingIcon={<KeyRound size={14} />}
+                          onClick={() => setEnrolling({ robot, mode: 'rotate' })}>{t('fleet.rotate')}</Button>
+                        {removing === robot.device_uuid ? (
+                          <>
+                            <Button size="sm" variant="danger" leadingIcon={<Trash2 size={14} />}
+                              onClick={() => unenroll(robot)}>{t('fleet.unenrollConfirm')}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setRemoving(null)}>{t('common.cancel')}</Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="ghost" leadingIcon={<Trash2 size={14} />}
+                            onClick={() => setRemoving(robot.device_uuid)}>{t('fleet.unenroll')}</Button>
+                        )}
+                      </>
+                    )}
+                  </Inline>
+                </Inline>
+              </Card>
+            );
+          })}
+        </Stack>
+      )}
+    </Stack>
   );
 };
-
-export default FleetDashboard;

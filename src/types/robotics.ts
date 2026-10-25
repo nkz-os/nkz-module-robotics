@@ -1,14 +1,9 @@
-export interface Vector3 {
-  x: number;
-  y: number;
-  z: number;
-}
+/** Wire types of the robotics API (/api/robotics). Mirror backend/app/api/*.py. */
 
-export interface Twist {
-  linear: Vector3;
-  angular: Vector3;
-}
+export type EnrollmentState = 'applying' | 'active' | 'failed' | 'pending_acl';
+export type RobotMode = 'MANUAL' | 'AUTO' | 'MISSION' | 'ESTOP';
 
+/** Robot telemetry as published by the robot (robot bridge spec, "RobotTelemetry"). */
 export interface RobotTelemetry {
   battery_pct: number;
   heading_deg: number;
@@ -18,44 +13,49 @@ export interface RobotTelemetry {
   ang_z: number;
   speed_kmh: number;
   ts: number;
-  implement_type?: string;
-  implement_pressure?: number;
-  implement_flow_rate?: number;
-  implement_seed_rate?: number;
-  error?: string;
 }
 
-export interface RobotInfo {
-  id: string;
+export interface LiveState {
+  online: boolean;
+  heartbeat_age_s: number | null;
+  vitals_age_ms: number | null;
+  mode: RobotMode | null;
+  mode_at: number | null;
+  telemetry: Partial<RobotTelemetry> | null;
+}
+
+export interface FleetRobot {
+  device_uuid: string;
   name: string;
-  type: string;
-  operationMode: 'MONITOR' | 'MANUAL' | 'AUTO' | 'ESTOP';
-  battery: number;
-  location?: { type: string; coordinates: [number, number] };
-  dateModified?: string;
+  enrollment: { state: EnrollmentState } | null;
+  live: LiveState | null;
 }
 
-export type DriveMode = 'ACKERMANN_FRONT' | 'ACKERMANN_DUAL' | 'CRAB' | 'DIFFERENTIAL';
-
-export type OperationMode = 'MONITOR' | 'MANUAL' | 'AUTO' | 'ESTOP';
-
-export interface Geofence {
-  id: string;
-  name: string;
-  type: 'inclusion' | 'exclusion';
-  geometry: GeoJSON.Polygon;
-  active: boolean;
+export interface FleetOut {
+  robots: FleetRobot[];
+  link_up: boolean;
 }
 
-export interface ZenohConfig {
-  mode: string;
-  connect: string[];
-  namespaces: Record<string, string>;
-  safety: Record<string, unknown>;
-}
-
-export interface RobotCredentials {
+export interface ZenohCredential {
+  endpoint: string;
   username: string;
   password: string;
-  endpoint: string;
+  key_prefix: string;
+}
+
+export interface EnrollOut {
+  device_uuid: string;
+  state: EnrollmentState;
+  zenoh: ZenohCredential;
+}
+
+export interface EstopOut {
+  published: boolean;
+  robot_connected: boolean;
+  sent_at: number;
+}
+
+export interface EstopAllOut {
+  results: (EstopOut & { device_uuid: string })[];
+  failed: string[];
 }

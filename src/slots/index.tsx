@@ -1,55 +1,29 @@
-import React from 'react';
+/**
+ * Host slots: a context panel with live state and E-Stop when a robot
+ * (ManufacturingMachine, category robot) is selected in the viewer. The robot's
+ * position on the map comes from its twin's `location`, drawn by the host.
+ */
 import '../i18n';
-import RobotMapLayer from '../components/slots/RobotMapLayer';
+import type { ModuleViewerSlots } from '@nekazari/sdk';
 import RobotContextPanel from '../components/slots/RobotContextPanel';
 
 const MODULE_ID = 'robotics';
 
-export interface SlotWidgetDefinition {
-  id: string;
-  moduleId: string;
-  component: string;
-  priority: number;
-  localComponent: React.ComponentType<any>;
-  showWhen?: { entityType?: string[] };
-}
-
-export type SlotType = 'layer-toggle' | 'context-panel' | 'bottom-panel' | 'entity-tree' | 'map-layer';
-
-export interface ModuleViewerSlots {
-  'layer-toggle'?: SlotWidgetDefinition[];
-  'context-panel'?: SlotWidgetDefinition[];
-  'bottom-panel'?: SlotWidgetDefinition[];
-  'entity-tree'?: SlotWidgetDefinition[];
-  'map-layer'?: SlotWidgetDefinition[];
-  moduleProvider?: React.ComponentType<{ children: React.ReactNode }>;
-}
-
 export const moduleSlots: ModuleViewerSlots = {
-  'map-layer': [
-    {
-      id: `${MODULE_ID}-map-layer`,
-      moduleId: MODULE_ID,
-      component: 'RobotMapLayer',
-      priority: 20,
-      localComponent: RobotMapLayer,
-      showWhen: { entityType: ['AgriRobot'] },
-    },
-  ],
+  'map-layer': [],
   'layer-toggle': [],
   'context-panel': [
     {
-      id: `${MODULE_ID}-context-panel`,
+      id: 'robotics-context-panel',
       moduleId: MODULE_ID,
       component: 'RobotContextPanel',
       priority: 10,
       localComponent: RobotContextPanel,
-      showWhen: { entityType: ['AgriRobot'] },
+      showWhen: { entityType: ['ManufacturingMachine'] },
     },
   ],
   'bottom-panel': [],
   'entity-tree': [],
 };
 
-export const viewerSlots = moduleSlots;
 export default moduleSlots;

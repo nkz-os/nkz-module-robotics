@@ -1,3 +1,5 @@
+# Fixed ClusterIP: robots are given tcp/<this IP>:7447 (ZENOH_ROBOT_ENDPOINT in
+# robotics-config); cluster DNS is not resolvable over the VPN.
 apiVersion: v1
 kind: Service
 metadata:
@@ -7,15 +9,12 @@ metadata:
     app: zenoh-router
     module: robotics
 spec:
+  type: ClusterIP
+  clusterIP: YOUR_ZENOH_CLUSTER_IP  # pick a free IP in the service CIDR
   selector:
     app: zenoh-router
   ports:
-    - name: tcp
+    - name: zenoh
       port: 7447
       targetPort: 7447
       protocol: TCP
-    - name: http
-      port: 8000
-      targetPort: 8000
-      protocol: TCP
-  type: ClusterIP

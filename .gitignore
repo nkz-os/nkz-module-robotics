@@ -29,3 +29,10 @@ CURRENT_STATE.md
 apikey_*.txt
 *.apikey
 *-secret*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

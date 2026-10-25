@@ -1,40 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
-import { roboticsApi } from '../services/roboticsApi';
-import type { RobotInfo } from '../types/robotics';
+import { useCallback, useEffect, useState } from 'react';
+import { ApiError, roboticsApi } from '../services/roboticsApi';
+import type { FleetOut } from '../types/robotics';
 
+/** Fleet list, refreshed every 5 s (live state lives in the backend). */
 export function useFleet() {
-  const [robots, setRobots] = useState<RobotInfo[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<FleetOut | null>(null);
+  const [error, setError] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await roboticsApi.listRobots();
-      setRobots(data.robots);
-    } catch (err) {
-      console.error('[useFleet] refresh error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      roboticsApi
+        .listRobots()
+        .then((d) => {
+          if (!cancelled) {
+            setData(d);
+            setError(null);
+          }
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setError(e instanceof ApiError ? e.status : 0);
+        });
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tick]);
 
-  useEffect(() => { refresh(); }, [refresh]);
-
-  const selectRobot = useCallback((id: string | null) => setSelected(id), []);
-
-  const provision = useCallback(async (body: {
-    name: string;
-    robot_id: string;
-    robot_type?: string;
-    parcel_id?: string | null;
-    device_uuid: string;
-    claim_code: string;
-  }) => {
-    const result = await roboticsApi.provisionRobot(body);
-    await refresh();
-    return result;
-  }, [refresh]);
-
-  return { robots, selected, selectRobot, refresh, loading, provision };
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  return { data, error, refresh };
 }
