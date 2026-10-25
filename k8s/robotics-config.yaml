@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: robotics-config
+  namespace: nekazari
+  labels:
+    app: robotics-api
+    module: robotics
+data:
+  VPN_INTERNAL_URL: "http://vpn-api-service:8000"
+  ZENOH_ROUTER_ENDPOINT: "tcp/zenoh-service:7447"
+  # Fixed ClusterIP of zenoh-service (zenoh-svc.yaml): what robots dial over the VPN.
+  ZENOH_ROBOT_ENDPOINT: "tcp/YOUR_ZENOH_CLUSTER_IP:7447"
+  ORION_LD_URL: "http://orion-ld-service:1026"
+  CONTEXT_URL: "http://api-gateway-service:5000/ngsi-ld-context.json"
+  REQUIRE_HMAC_SIGNATURE: "true"
+  K8S_NAMESPACE: "nekazari"

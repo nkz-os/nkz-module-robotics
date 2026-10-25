@@ -1,3 +1,9 @@
+# Zenoh router for field robots. Robots reach it over the VPN at the fixed
+# ClusterIP of zenoh-service with a per-robot usrpwd credential; the ACL limits
+# each robot to its own nkz/<tenant>/<uuid>/ keys. robotics-api writes the
+# Secret zenoh-acl from its database and restarts this Deployment by annotating
+# its pod template (robotics.nkz-os.org/acl-digest). Single replica: a restart
+# drops every robot link for a few seconds (accepted in preproduction).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +14,8 @@ metadata:
     module: robotics
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: zenoh-router
@@ -17,44 +25,80 @@ spec:
         app: zenoh-router
         module: robotics
     spec:
-      containers:
-        - name: zenoh-router
-          image: eclipse/zenoh:1.0.0
-          imagePullPolicy: IfNotPresent
-          args:
-            - "--config"
-            - "/config/zenoh.json5"
-          ports:
-            - containerPort: 7447
-              name: tcp
-              protocol: TCP
-            - containerPort: 8000
-              name: http
-              protocol: TCP
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: merge-config
+          image: busybox:1.37
+          command: ["sh", "/base/merge.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
               cpu: 100m
-              memory: 128Mi
+              memory: 32Mi
+          volumeMounts:
+            - name: base
+              mountPath: /base
+              readOnly: true
+            - name: acl
+              mountPath: /acl
+              readOnly: true
+            - name: config
+              mountPath: /config
+      containers:
+        - name: zenoh-router
+          image: eclipse/zenoh:1.10.1
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/config/zenoh.json5"]
+          ports:
+            - name: zenoh
+              containerPort: 7447
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            tcpSocket:
+              port: zenoh
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: zenoh
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 256Mi
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: tls
-              mountPath: /tls
-              readOnly: true
-            - name: credentials
-              mountPath: /credentials
               readOnly: true
       volumes:
-        - name: config
+        - name: base
           configMap:
             name: zenoh-config
-        - name: tls
+        - name: acl
           secret:
-            secretName: zenoh-tls
-        - name: credentials
-          secret:
-            secretName: zenoh-tenant-credentials
+            secretName: zenoh-acl
             optional: true
+        - name: config
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi

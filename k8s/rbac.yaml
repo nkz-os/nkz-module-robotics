@@ -1,0 +1,49 @@
+# robotics-api writes the router's ACL Secret and restarts the router.
+# Kubernetes cannot scope "create" by resourceNames, so create is granted on
+# Secrets in general (no read of other Secrets).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: robotics-api-sa
+  namespace: nekazari
+  labels:
+    app: robotics-api
+    module: robotics
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: robotics-api-zenoh
+  namespace: nekazari
+  labels:
+    app: robotics-api
+    module: robotics
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["zenoh-acl"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["zenoh-router"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: robotics-api-zenoh
+  namespace: nekazari
+  labels:
+    app: robotics-api
+    module: robotics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: robotics-api-zenoh
+subjects:
+  - kind: ServiceAccount
+    name: robotics-api-sa
+    namespace: nekazari

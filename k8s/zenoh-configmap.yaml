@@ -8,60 +8,27 @@ metadata:
     module: robotics
 data:
   zenoh.json5: |
+    // Base router configuration. The initContainer replaces the ACCESS_CONTROL
+    // marker line with access_control.json5 from the Secret zenoh-acl (written by
+    // robotics-api from its database) and copies its credentials.txt next to it.
+    // Without that Secret the router starts with nobody allowed (deny-all).
     {
       mode: "router",
-      listen: {
-        // "tls/" (not "tcp/") is required for the configured cert/key below
-        // to actually terminate TLS — a plain "tcp/" listener ignores them
-        // and serves the transport in clear text.
-        endpoints: [
-          "tls/0.0.0.0:7447"
-        ]
-      },
+      listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+      scouting: { multicast: { enabled: false }, gossip: { enabled: false } },
       transport: {
-        link: {
-          tls: {
-            listen_certificate: "/tls/tls.crt",
-            listen_private_key: "/tls/tls.key"
-          }
-        },
-        auth: {
-          // Per-TENANT static credentials (Zenoh 1.0 has no admin API for
-          // dynamic per-robot provisioning). dictionary_file is mounted
-          // from the zenoh-tenant-credentials Secret — one plaintext
-          // "tenant_id:password" line per tenant, provisioned manually (same operational pattern
-          // already used for zenoh-tls). See backend/app/services/zenoh_client.py
-          // for the reader; robotics-api never writes this file.
-          usrpwd: {
-            dictionary_file: "/credentials/credentials.txt"
-          }
-        }
+        auth: { usrpwd: { dictionary_file: "/config/credentials.txt" } }
       },
-      // Fail-closed by default: nothing is reachable until a tenant is
-      // explicitly provisioned below. To onboard tenant "<tenant_id>":
-      //   1. Add a line to the zenoh-tenant-credentials Secret (PLAINTEXT —
-      //      robotics-api reads this same file back to show the operator
-      //      the password once, at provisioning time; treat the Secret
-      //      with the same care as jwt-secret):
-      //      <tenant_id>:<generated password>
-      //   2. Add a subjects/rules/policies block here scoping that tenant
-      //      to nkz/<tenant_id>/** (Zenoh key-expr templates cannot
-      //      reference the authenticated username dynamically — each
-      //      tenant needs its own explicit block).
-      //   3. Restart zenoh-router (single replica — brief control-plane
-      //      outage for all connected robots of ALL tenants; acceptable at
-      //      pilot scale, revisit if the platform grows multi-tenant field
-      //      fleets concurrently).
-      access_control: {
-        enabled: true,
-        default_permission: "deny",
-        subjects: [],
-        rules: [],
-        policies: []
-      },
-      plugins: {
-        rest: {
-          http_port: 8000
-        }
-      }
+      access_control:
+        __ACCESS_CONTROL__
+      ,
+      plugins_loading: { enabled: false }
     }
+  deny.json5: |
+    { "enabled": true, "default_permission": "deny", "rules": [], "subjects": [], "policies": [] }
+  merge.sh: |
+    set -eu
+    if [ -s /acl/access_control.json5 ]; then ac=/acl/access_control.json5; else ac=/base/deny.json5; fi
+    awk -v f="$ac" '/__ACCESS_CONTROL__/ { while ((getline line < f) > 0) print line; next } { print }' /base/zenoh.json5 > /config/zenoh.json5
+    if [ -f /acl/credentials.txt ]; then cp /acl/credentials.txt /config/credentials.txt; else : > /config/credentials.txt; fi
+    echo "zenoh config: acl=$ac users=$(grep -c . /config/credentials.txt || true)"

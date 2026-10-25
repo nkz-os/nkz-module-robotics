@@ -1,0 +1,38 @@
+# Only VPN traffic (robots, via the subnet router) and robotics-api reach the
+# router. zenoh-router is excluded from baseline-ingress, so this is the whole
+# allow list.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zenoh-router-ingress
+  namespace: nekazari
+  labels:
+    app: zenoh-router
+    module: robotics
+spec:
+  podSelector:
+    matchLabels:
+      app: zenoh-router
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: robotics-api
+      ports:
+        - protocol: TCP
+          port: 7447
+    - from:
+        - podSelector:
+            matchLabels:
+              app: tailscale-subnet-router
+      ports:
+        - protocol: TCP
+          port: 7447
+    - from:
+        - ipBlock:
+            cidr: YOUR_VPN_CIDR  # the tailnet address range
+      ports:
+        - protocol: TCP
+          port: 7447
