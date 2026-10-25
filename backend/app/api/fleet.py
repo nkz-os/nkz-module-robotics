@@ -1,416 +1,156 @@
-"""Fleet management endpoints — robot CRUD, geofences, route history."""
+"""
+Fleet routes (behind the api-gateway, signed tenant headers).
+
+View and E-Stop: every role with access to the module — a safety stop is never
+restricted. Enroll / rotate / unenroll: TenantAdmin, PlatformAdmin.
+"""
+
 import logging
-import httpx
-from fastapi import APIRouter, Request, HTTPException, Query
-from pydantic import BaseModel, Field
-from app.config import settings
-from app.services.orion_robots import get_orion_robots
-from app.services.zenoh_client import get_tenant_credential
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel
+
+from app.db.repo import EnrollmentRepo
+from app.deps import Services, get_services
+from app.middleware import AuthContext, require_roles
+from app.services import enrollment
+from app.services.zenoh_link import LinkDown
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/fleet", tags=["fleet"])
+
+_viewer = require_roles("Farmer", "TechnicalConsultant", "TenantAdmin", "PlatformAdmin")
+_admin = require_roles("TenantAdmin", "PlatformAdmin")
 
 
-class RegisterRobotBody(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128)
-    robot_id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
-    robot_type: str = "AgriRobot"
-    parcel_id: str | None = None
-
-
-class RobotCredentials(BaseModel):
+class ZenohCredential(BaseModel):
+    endpoint: str
     username: str
     password: str
-    endpoint: str
+    key_prefix: str
 
 
-class RegisterRobotResponse(BaseModel):
-    robot_id: str
-    name: str
-    credentials: RobotCredentials
-
-
-class ProvisionRobotBody(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128)
-    robot_id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
-    robot_type: str = "AgriRobot"
-    parcel_id: str | None = None
-    device_uuid: str = Field(..., description="Device UUID pre-registered in VPN factory")
-    claim_code: str = Field(..., description="Claim Code printed on the robot chassis")
-
-
-class ProvisionRobotResponse(BaseModel):
-    robot_id: str
-    name: str
+class EnrollOut(BaseModel):
     device_uuid: str
-    credentials: RobotCredentials  # Zenoh
-    tailscale_auth_key: str | None
-    tailscale_login_server: str | None
-    ngsi_entity_id: str | None
+    state: str
+    zenoh: ZenohCredential
 
 
-def _tenant_zenoh_credential(tenant_id: str) -> RobotCredentials:
-    """Look up this tenant's (not per-robot — see zenoh_client.py) Zenoh
-    credential. 503, not a fabricated credential, if it isn't provisioned."""
-    password = get_tenant_credential(tenant_id)
-    if password is None:
-        raise HTTPException(
-            503,
-            f"Zenoh credentials not provisioned for tenant {tenant_id} — "
-            "contact the platform admin (zenoh-tenant-credentials Secret).",
-        )
-    return RobotCredentials(
-        username=tenant_id,
-        password=password,
-        endpoint=settings.ZENOH_ROBOT_ENDPOINT,
-    )
+class EnrollmentOut(BaseModel):
+    device_uuid: str
+    state: str
+
+
+class EstopOut(BaseModel):
+    published: bool
+    robot_connected: bool
+
+
+class EstopAllItem(EstopOut):
+    device_uuid: str
+
+
+class EstopAllOut(BaseModel):
+    results: list[EstopAllItem]
+    failed: list[str]
+
+
+def _credential(svc: Services, tenant_id: str, issued: enrollment.IssuedCredential) -> EnrollOut:
+    if not svc.settings.zenoh_robot_endpoint:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Robot endpoint not configured")
+    return EnrollOut(device_uuid=issued.device_uuid, state="applying", zenoh=ZenohCredential(
+        endpoint=svc.settings.zenoh_robot_endpoint, username=issued.device_uuid, password=issued.password,
+        key_prefix=f"nkz/{tenant_id}/{issued.device_uuid}"))
+
+
+async def _enrolled(svc: Services, tenant_id: str, device_uuid: str):
+    async with svc.db.tenant_tx(tenant_id) as conn:
+        row = await EnrollmentRepo(conn).get(device_uuid)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Robot not enrolled")
+    return row
 
 
 @router.get("/robots")
-async def list_robots(request: Request):
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robots = await client.list_robots()
-    return {"robots": robots, "count": len(robots)}
-
-
-@router.get("/robots/{robot_id}")
-async def get_robot(robot_id: str, request: Request):
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robot = await client.get_robot(robot_id)
-    if not robot:
-        raise HTTPException(404, f"Robot {robot_id} not found in tenant {tenant_id}")
-    return robot
-
-
-@router.post("/robots", status_code=201)
-async def register_robot(body: RegisterRobotBody, request: Request):
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-
-    existing = await client.get_robot(body.robot_id)
-    if existing:
-        raise HTTPException(409, f"Robot {body.robot_id} already exists")
-
-    credentials = _tenant_zenoh_credential(tenant_id)
-    await client.create_robot(body.robot_id, body.name, body.robot_type, body.parcel_id)
-
-    return RegisterRobotResponse(
-        robot_id=body.robot_id,
-        name=body.name,
-        credentials=credentials,
-    )
-
-
-@router.patch("/robots/{robot_id}")
-async def update_robot(robot_id: str, body: dict, request: Request):
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robot = await client.get_robot(robot_id)
-    if not robot:
-        raise HTTPException(404, f"Robot {robot_id} not found")
-    await client.update_robot(robot_id, body)
-    return {"status": "ok"}
-
-
-@router.delete("/robots/{robot_id}")
-async def decommission_robot(robot_id: str, request: Request):
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robot = await client.get_robot(robot_id)
-    if not robot:
-        raise HTTPException(404, f"Robot {robot_id} not found")
-
-    # Zenoh credentials are per-TENANT, not per-robot — nothing to revoke here.
-    await client.delete_robot(robot_id)
-    return {"status": "decommissioned"}
-
-
-@router.post("/robots/{robot_id}/claim-control")
-async def claim_control(robot_id: str, request: Request):
-    """Claim exclusive control of a robot for teleoperation."""
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robot = await client.get_robot(robot_id)
-    if not robot:
-        raise HTTPException(404, f"Robot {robot_id} not found")
-
-    current = robot.get("controlledBy", {}).get("value", "")
-    if current and current != tenant_id:
-        raise HTTPException(409, f"Robot {robot_id} is under control of {current}")
-
-    await client.update_robot(robot_id, {"controlledBy": tenant_id})
-    return {"status": "claimed", "robot_id": robot_id, "controlledBy": tenant_id}
-
-
-@router.post("/robots/{robot_id}/release-control")
-async def release_control(robot_id: str, request: Request):
-    """Release exclusive control of a robot."""
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robot = await client.get_robot(robot_id)
-    if not robot:
-        raise HTTPException(404, f"Robot {robot_id} not found")
-
-    current = robot.get("controlledBy", {}).get("value", "")
-    if current and current != tenant_id:
-        raise HTTPException(409, f"Control is held by {current}, cannot release")
-
-    await client.update_robot(robot_id, {"controlledBy": ""})
-    return {"status": "released", "robot_id": robot_id}
-
-
-@router.post("/robots/provision", status_code=201)
-async def provision_robot(body: ProvisionRobotBody, request: Request):
-    """
-    Unified provisioning wizard:
-    1. Validate Claim Code against VPN module
-    2. Look up this tenant's Zenoh credential
-    3. Create/update AgriRobot in Orion-LD
-    4. Consume Claim Code in VPN (final claim)
-    5. Return all credentials
-    """
-    tenant_id = request.state.tenant_id
-
-    # Forward the ALREADY-VERIFIED identity this request carried (set by
-    # tenant_middleware after HMAC verification) — not a re-extracted raw
-    # Bearer token. nkz-network-controller-service (VPN module) doesn't parse
-    # Bearer tokens at all; it trusts X-User-ID/X-User-Roles/X-Tenant-ID, the
-    # same headers the gateway injects. Forwarding the raw Authorization
-    # header here always 401'd against that service.
-    vpn_headers = {
-        "X-User-ID": request.state.user_id,
-        "X-User-Roles": ",".join(request.state.roles),
-        "X-Tenant-ID": tenant_id,
-        "Content-Type": "application/json",
-    }
-
-    vpn_base = "http://nkz-network-controller-service/api/vpn"
-
-    # Step 1: Validate Claim Code against VPN (read-only)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            validate_resp = await client.post(
-                f"{vpn_base}/devices/validate",
-                json={"device_uuid": body.device_uuid, "claim_code": body.claim_code},
-                headers=vpn_headers,
-            )
-            if validate_resp.status_code == 404:
-                raise HTTPException(404, f"Device {body.device_uuid} not found in VPN")
-            if validate_resp.status_code == 409:
-                raise HTTPException(409, "This Claim Code has already been used")
-            if validate_resp.status_code == 410:
-                raise HTTPException(410, "This device has been revoked")
-            if validate_resp.status_code >= 400:
-                detail = "Invalid Claim Code"
-                try:
-                    detail = validate_resp.json().get("detail", detail)
-                except Exception:
-                    pass
-                raise HTTPException(400, detail)
-        except httpx.ConnectError:
-            raise HTTPException(
-                502,
-                "VPN module is not reachable. Activate the 'Device Management' module first.",
-            )
-
-    # Step 2: Look up this tenant's Zenoh credential (fail BEFORE step 4 —
-    # consuming the one-time claim code on a tenant with no Zenoh credential
-    # provisioned would strand the operator with an unusable device).
-    credentials = _tenant_zenoh_credential(tenant_id)
-
-    # Step 3: Create AgriRobot in Orion-LD
-    client = get_orion_robots(tenant_id)
-    existing = await client.get_robot(body.robot_id)
-    if existing:
-        await client.update_robot(body.robot_id, {
-            "name": body.name,
-            "robotType": body.robot_type,
-            "controlledBy": "",
-            "operationMode": "MONITOR",
-        })
-    else:
-        await client.create_robot(body.robot_id, body.name, body.robot_type, body.parcel_id)
-
-    # Step 4: Consume Claim Code in VPN (final claim)
-    tailscale_key = None
-    login_server = None
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            claim_body = {"device_uuid": body.device_uuid, "claim_code": body.claim_code}
-            if body.name:
-                claim_body["device_name"] = body.name
-            claim_resp = await client.post(
-                f"{vpn_base}/devices/claim",
-                json=claim_body,
-                headers=vpn_headers,
-            )
-            if claim_resp.status_code == 200:
-                claim_data = claim_resp.json()
-                tailscale_key = claim_data.get("preauth_key")
-                login_server = claim_data.get("login_server")
-            else:
-                logger.warning(
-                    "VPN claim returned %s for device %s — credentials still generated",
-                    claim_resp.status_code, body.device_uuid,
-                )
-        except Exception as e:
-            logger.warning(
-                "VPN claim failed for device %s: %s — credentials still generated",
-                body.device_uuid, e,
-            )
-
-    return ProvisionRobotResponse(
-        robot_id=body.robot_id,
-        name=body.name,
-        device_uuid=body.device_uuid,
-        credentials=credentials,
-        tailscale_auth_key=tailscale_key,
-        tailscale_login_server=login_server or "",
-        ngsi_entity_id=f"urn:ngsi-ld:AgriRobot:{body.robot_id}",
-    )
-
-
-@router.get("/vpn/check")
-async def check_vpn_status():
-    """Check if the VPN module (nkz-network-controller) is reachable."""
+async def list_robots(auth: AuthContext = Depends(_viewer), svc: Services = Depends(get_services)):
+    orion = svc.orion(auth.tenant_id)
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get("http://nkz-network-controller-service/health")
-            return {
-                "vpn_available": resp.status_code < 500,
-                "vpn_url": "/devices",
-                "vpn_status": resp.json() if resp.status_code == 200 else None,
-            }
-    except Exception:
-        return {
-            "vpn_available": False,
-            "vpn_url": "/devices",
-            "vpn_status": None,
-            "hint": "Activate the 'Device Management' module in Settings → Modules.",
-        }
-
-
-@router.get("/robots/{robot_id}/route")
-async def get_robot_route(
-    robot_id: str,
-    request: Request,
-    from_ts: str = Query(None, alias="from"),
-    to_ts: str = Query(None, alias="to"),
-    limit: int = Query(1000, le=10000),
-):
-    """Query GPS trajectory from TimescaleDB. Returns GeoJSON LineString."""
-    tenant_id = request.state.tenant_id
-    import asyncpg
-    from app.config import settings as s
-
-    conn = await asyncpg.connect(s.TIMESCALE_URL)
-    try:
-        rows = await conn.fetch(
-            """
-            SELECT ST_AsGeoJSON(ST_MakeLine(location ORDER BY ts)) AS geom
-            FROM (
-                SELECT ts, location
-                FROM telemetry.measurements
-                WHERE tenant_id = $1
-                  AND entity_id = $2
-                  AND ($3::timestamptz IS NULL OR ts >= $3::timestamptz)
-                  AND ($4::timestamptz IS NULL OR ts <= $4::timestamptz)
-                ORDER BY ts
-                LIMIT $5
-            ) sub
-            """,
-            tenant_id,
-            f"urn:ngsi-ld:AgriRobot:{robot_id}",
-            from_ts,
-            to_ts,
-            limit,
-        )
-        geom = rows[0]["geom"] if rows and rows[0]["geom"] else None
-        return {"robot_id": robot_id, "geometry": geom}
+        twins = await orion.query_entities(type="ManufacturingMachine", q='category=="robot"', limit=1000)
     finally:
-        await conn.close()
+        await orion.close()
+    async with svc.db.tenant_tx(auth.tenant_id) as conn:
+        enrolled = {e.device_uuid: e for e in await EnrollmentRepo(conn).list_tenant()}
+    robots = []
+    for twin in twins:
+        uuid = twin.get("id", "").rsplit(":", 1)[-1]
+        live = svc.link.state.get(auth.tenant_id, uuid)
+        row = enrolled.get(uuid)
+        robots.append({
+            "device_uuid": uuid,
+            "name": (twin.get("name") or {}).get("value") or uuid,
+            "enrollment": {"state": row.state} if row else None,
+            "live": svc.link.state.snapshot(live) if live else None,
+        })
+    return {"robots": robots, "link_up": svc.link.connected}
 
 
-# ── Fleet-wide actions ──────────────────────────────────────────────
+@router.post("/robots/{device_uuid}/enroll", response_model=EnrollOut, status_code=status.HTTP_202_ACCEPTED)
+async def enroll_robot(device_uuid: UUID, auth: AuthContext = Depends(_admin), svc: Services = Depends(get_services)):
+    issued = await enrollment.enroll(svc, tenant_id=auth.tenant_id, device_uuid=str(device_uuid), actor=auth.user_id)
+    return _credential(svc, auth.tenant_id, issued)
 
 
-@router.post("/actions/pause-all")
-async def pause_all(request: Request):
-    """Soft stop: set all tenant robots to MONITOR mode (gradual deceleration)."""
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robots = await client.list_robots()
+@router.get("/robots/{device_uuid}/enrollment", response_model=EnrollmentOut)
+async def get_enrollment(device_uuid: UUID, auth: AuthContext = Depends(_viewer),
+                         svc: Services = Depends(get_services)):
+    row = await _enrolled(svc, auth.tenant_id, str(device_uuid))
+    return EnrollmentOut(device_uuid=row.device_uuid, state=row.state)
 
-    updated = 0
-    for robot in robots:
-        rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
-        if not rid:
-            continue
-        await client.update_robot(rid, {"operationMode": "MONITOR"})
-        # Send mode change via Zenoh if robot is online
+
+@router.post("/robots/{device_uuid}/rotate-credential", response_model=EnrollOut,
+             status_code=status.HTTP_202_ACCEPTED)
+async def rotate_credential(device_uuid: UUID, auth: AuthContext = Depends(_admin),
+                            svc: Services = Depends(get_services)):
+    issued = await enrollment.rotate(svc, tenant_id=auth.tenant_id, device_uuid=str(device_uuid), actor=auth.user_id)
+    return _credential(svc, auth.tenant_id, issued)
+
+
+@router.delete("/robots/{device_uuid}/enrollment", status_code=status.HTTP_204_NO_CONTENT)
+async def unenroll_robot(device_uuid: UUID, auth: AuthContext = Depends(_admin),
+                         svc: Services = Depends(get_services)):
+    if not await enrollment.unenroll(svc, tenant_id=auth.tenant_id, device_uuid=str(device_uuid),
+                                     actor=auth.user_id, reason="operator"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Robot not enrolled")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/robots/{device_uuid}/estop", response_model=EstopOut)
+async def estop_robot(device_uuid: UUID, auth: AuthContext = Depends(_viewer), svc: Services = Depends(get_services)):
+    await _enrolled(svc, auth.tenant_id, str(device_uuid))
+    try:
+        result = await svc.link.estop(auth.tenant_id, str(device_uuid))
+    except LinkDown:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Robot link is down; use the local E-Stop") from None
+    logger.warning("E-Stop requested", extra={"device_uuid": str(device_uuid), "tenant_id": auth.tenant_id,
+                                              "actor": auth.user_id})
+    return EstopOut(published=result.published, robot_connected=result.robot_connected)
+
+
+@router.post("/actions/estop-all", response_model=EstopAllOut)
+async def estop_all(auth: AuthContext = Depends(_viewer), svc: Services = Depends(get_services)):
+    async with svc.db.tenant_tx(auth.tenant_id) as conn:
+        rows = await EnrollmentRepo(conn).list_tenant()
+    results, failed = [], []
+    for row in rows:
         try:
-            from app.services.zenoh_client import robot_topic, put
-            await put(robot_topic(tenant_id, rid, "mode"), {"value": "MONITOR"}, timeout=1.0)
-        except Exception:
-            pass
-        updated += 1
-
-    logger.info("Pause All: %s robots set to MONITOR for tenant %s", updated, tenant_id)
-    return {"action": "pause-all", "robots_affected": updated, "status": "ok"}
-
-
-@router.post("/actions/estop-all")
-async def estop_all(request: Request):
-    """Emergency soft stop: assert /safety/estop on every robot (edge contract).
-
-    Matches ROVER_NKZ CONTRATO: std_msgs/Bool on safety/estop → SW_ESTOP.
-    Zero cmd_vel alone is not enough if a guidance source still has mux priority.
-
-    Fail-safe reporting: this is an emergency endpoint, so a robot whose
-    Zenoh PUT failed must show up as failed, never silently folded into an
-    "ok" count — an operator seeing "5 robots stopped" must be able to trust
-    all 5 actually got the signal.
-    """
-    tenant_id = request.state.tenant_id
-    client = get_orion_robots(tenant_id)
-    robots = await client.list_robots()
-
-    from app.services.zenoh_client import robot_topic, put
-
-    succeeded: list[str] = []
-    failed: list[str] = []
-    for robot in robots:
-        rid = robot.get("id", "").replace("urn:ngsi-ld:AgriRobot:", "")
-        if not rid:
-            continue
-        try:
-            # Edge system_monitor listens to /safety/estop (Bool) — this is
-            # the load-bearing PUT; mode/cmd_vel are best-effort extras.
-            await put(robot_topic(tenant_id, rid, "safety/estop"), {"data": True}, timeout=1.0)
-        except Exception as exc:
-            logger.error("E-Stop All: safety/estop PUT failed for %s: %s", rid, exc)
-            failed.append(rid)
-            await client.update_robot(rid, {"operationMode": "ESTOP"})
-            continue
-        for channel, payload in (
-            ("cmd_vel", {"linear": {"x": 0, "y": 0, "z": 0}, "angular": {"x": 0, "y": 0, "z": 0}}),
-            ("mode", {"value": "ESTOP"}),
-        ):
-            try:
-                await put(robot_topic(tenant_id, rid, channel), payload, timeout=1.0)
-            except Exception as exc:
-                logger.warning("E-Stop All: %s PUT failed for %s: %s", channel, rid, exc)
-        await client.update_robot(rid, {"operationMode": "ESTOP"})
-        succeeded.append(rid)
-
-    if failed:
-        logger.error("E-Stop All: FAILED to reach %s for tenant %s", failed, tenant_id)
-    logger.warning("E-Stop All: %s robots soft-stopped for tenant %s", len(succeeded), tenant_id)
-    return {
-        "action": "estop-all",
-        "robots_affected": len(succeeded),
-        "robots_failed": failed,
-        "status": "ok" if not failed else "partial",
-    }
+            r = await svc.link.estop(auth.tenant_id, row.device_uuid)
+            results.append(EstopAllItem(device_uuid=row.device_uuid, published=r.published,
+                                        robot_connected=r.robot_connected))
+        except LinkDown:
+            failed.append(row.device_uuid)  # never folded into an "ok": the operator must see it
+    logger.warning("E-Stop all requested", extra={"tenant_id": auth.tenant_id, "actor": auth.user_id,
+                                                  "sent": len(results), "failed": len(failed)})
+    if rows and not results:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Robot link is down; use the local E-Stop")
+    return EstopAllOut(results=results, failed=failed)

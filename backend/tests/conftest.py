@@ -71,3 +71,91 @@ async def db(pg_dsn):
         await database.close()
 
 
+
+
+# --------------------------------------------------------------------------
+# Application fixtures: injected services, gateway headers, fakes for the
+# parts that need a cluster (router restarts) or a robot (the Zenoh link).
+# --------------------------------------------------------------------------
+
+import httpx  # noqa: E402
+from cryptography.fernet import Fernet  # noqa: E402
+
+ORION_URL = "http://orion.test:1026"
+CONTEXT_URL = "http://ctx.test/context.json"
+VPN_URL = "http://vpn.test:8000"
+
+
+def gateway_headers(tenant: str = "acme", roles: str = "TenantAdmin", user: str = "u1") -> dict[str, str]:
+    return {"X-Tenant-ID": tenant, "X-User-ID": user, "X-User-Roles": roles}
+
+
+class FakeApplier:
+    def __init__(self, ok: bool = True):
+        self.bundles, self.ok = [], ok
+
+    async def apply(self, bundle):
+        changed = not self.bundles or self.bundles[-1].digest != bundle.digest
+        self.bundles.append(bundle)
+        return changed
+
+    async def wait_ready(self, timeout: float = 120.0, interval: float = 2.0):
+        return self.ok
+
+
+class FakeLink:
+    def __init__(self):
+        from app.services.zenoh_link import LiveState
+
+        self.state = LiveState()
+        self.connected = True
+        self.estops: list[tuple[str, str]] = []
+        self.robot_connected = True
+
+    async def estop(self, tenant_id, device_uuid):
+        from app.services.zenoh_link import EstopResult, LinkDown
+
+        if not self.connected:
+            raise LinkDown("down")
+        self.estops.append((tenant_id, device_uuid))
+        return EstopResult(published=True, robot_connected=self.robot_connected)
+
+
+@pytest.fixture(autouse=True)
+def _gateway_signature_off(monkeypatch):
+    import nkz_platform_sdk.auth as sdk_auth
+
+    monkeypatch.setattr(sdk_auth, "REQUIRE_HMAC", False)
+    monkeypatch.setattr(sdk_auth, "HMAC_SECRET", "")
+
+
+@pytest.fixture
+def settings():
+    from app.config import Settings
+
+    return Settings(_env_file=None, vpn_internal_url=VPN_URL, internal_service_secret="internal-secret",
+                    zenoh_router_endpoint="tcp/zenoh.test:7447", zenoh_robot_endpoint="tcp/192.0.2.10:7447",
+                    zenoh_service_password="svc-pass", credential_key=Fernet.generate_key().decode(),
+                    jwks_url="http://kc.test/certs", jwt_issuer="http://kc.test/realms/x")
+
+
+@pytest.fixture
+async def services(db, settings):
+    from nkz_platform_sdk import OrionClient
+
+    from app.deps import Services
+    from app.services.credentials import CredentialBox
+    from app.services.vpn_client import VpnClient
+
+    return Services(settings=settings, db=db, link=FakeLink(), applier=FakeApplier(),
+                    vpn=VpnClient(VPN_URL, "internal-secret"), box=CredentialBox(settings.credential_key),
+                    orion=lambda t: OrionClient(t, base_url=ORION_URL, context_url=CONTEXT_URL))
+
+
+@pytest.fixture
+async def api(services):
+    from app.main import create_app
+
+    app = create_app(services=services)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://robotics.test") as client:
+        yield client
