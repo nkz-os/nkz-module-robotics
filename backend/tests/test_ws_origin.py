@@ -17,9 +17,12 @@ def test_non_browser_client_without_origin_is_allowed():
 
 
 def test_allowlist_comes_from_cors_origins(monkeypatch):
-    from app.config import settings
+    from app.config import get_settings
 
-    monkeypatch.setattr(settings, "CORS_ORIGINS", " https://a.example, https://b.example ")
+    monkeypatch.setenv("CORS_ORIGINS", " https://a.example, https://b.example ")
+    get_settings.cache_clear()
     assert allowed_origins() == ["https://a.example", "https://b.example"]
-    monkeypatch.setattr(settings, "CORS_ORIGINS", "")
+    monkeypatch.setenv("CORS_ORIGINS", "")
+    get_settings.cache_clear()
     assert allowed_origins() == []
+    get_settings.cache_clear()

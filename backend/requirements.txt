@@ -1,10 +1,24 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
-httpx==0.27.0
-pyjwt[crypto]==2.9.0
-cryptography==43.0.0
-pydantic==2.9.0
-pydantic-settings==2.5.0
-python-dotenv==1.0.1
-prometheus-fastapi-instrumentator==7.0.0
-nkz-platform-sdk==0.5.0
+# Robotics backend
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
+httpx==0.28.1
+
+# Own PostgreSQL database (robot enrollments, audit). Never telemetry.
+asyncpg==0.32.0
+
+# Robot link: authenticated Zenoh client (same major/minor as the router).
+eclipse-zenoh==1.10.1
+
+# Credential encryption (Fernet) and cookie JWT verification for the SSE stream.
+cryptography==50.0.2
+pyjwt[crypto]==2.10.1
+
+# Router ACL Secret and rollout (Kubernetes API).
+kubernetes==37.0.1
+
+# Nekazari Platform SDK — gateway auth (require_auth) and OrionClient.
+nkz-platform-sdk==0.13.0
+
+prometheus-fastapi-instrumentator==7.1.0
