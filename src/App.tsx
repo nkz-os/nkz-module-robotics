@@ -1,35 +1,22 @@
 import './i18n';
-import React, { useState, useCallback } from 'react';
-import FleetDashboard from './components/fleet/FleetDashboard';
-import CockpitLayout from './components/cockpit/CockpitLayout';
+import React, { useState } from 'react';
+import { ModuleAttribution } from './components/ModuleAttribution';
+import { Cockpit } from './components/cockpit/Cockpit';
+import { FleetDashboard } from './components/fleet/FleetDashboard';
+import type { FleetRobot } from './types/robotics';
 
-const RoboticsApp: React.FC = () => {
-  const [view, setView] = useState<'fleet' | 'cockpit'>('fleet');
-  const [activeRobotId, setActiveRobotId] = useState<string | null>(null);
-
-  const openCockpit = useCallback((robotId: string) => {
-    setActiveRobotId(robotId);
-    setView('cockpit');
-  }, []);
-
-  const backToFleet = useCallback(() => {
-    setActiveRobotId(null);
-    setView('fleet');
-  }, []);
-
-  if (view === 'cockpit' && activeRobotId) {
-    return (
-      <div className="robotics-module min-h-screen">
-        <CockpitLayout robotId={activeRobotId} onBack={backToFleet} />
-      </div>
-    );
-  }
-
+const App: React.FC = () => {
+  const [open, setOpen] = useState<FleetRobot | null>(null);
   return (
-    <div className="robotics-module min-h-screen">
-      <FleetDashboard onOpenCockpit={openCockpit} />
+    <div className="w-full p-nkz-section">
+      {open ? (
+        <Cockpit uuid={open.device_uuid} name={open.name} onBack={() => setOpen(null)} />
+      ) : (
+        <FleetDashboard onOpen={setOpen} />
+      )}
+      <ModuleAttribution />
     </div>
   );
 };
 
-export default RoboticsApp;
+export default App;

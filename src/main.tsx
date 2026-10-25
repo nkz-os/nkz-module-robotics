@@ -1,8 +1,5 @@
 /**
- * Main entry point for Robotics Module (IIFE bundle)
- *
- * In development/standalone mode, renders the app to #root.
- * In production, the IIFE bundle registers via window.__NKZ__.
+ * Standalone dev entry (vite dev server); the platform loads src/Module.tsx.
  */
 
 import React from 'react';
