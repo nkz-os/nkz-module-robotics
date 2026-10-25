@@ -11,7 +11,9 @@
     "open": "Open",
     "enroll": "Enroll",
     "rotate": "New password",
-    "unenroll": "Remove"
+    "unenroll": "Remove",
+    "unenrollConfirm": "Confirm: remove the robot's platform link",
+    "unenrollFailed": "Could not remove {{name}} (error {{status}})."
   },
   "enrollment": {
     "none": "Not enrolled",
@@ -55,7 +57,8 @@
     "online": "Online",
     "staleFor": "No data for {{n}} s",
     "linkUp": "Platform link up",
-    "linkDown": "Platform link down"
+    "linkDown": "Platform link down",
+    "linkUnknown": "Connecting…"
   },
   "mode": {
     "MANUAL": "Manual",

@@ -4,7 +4,9 @@ Background reconciliation.
 * Every robot enrolled here must still be a CLAIMED robot of the same tenant in
   vpn; a revoked, removed or moved device loses its Zenoh credential. A vpn
   outage removes nothing.
-* Enrollments whose router config is pending are re-applied.
+* The router config is re-applied every cycle: a no-op when the router already
+  runs it, and the repair when an earlier apply (enroll, rotate, unenroll)
+  failed half-way.
 * The twin's `location` follows live telemetry, at most once per robot every
   LOCATION_SYNC seconds (the only attribute this module writes on the twin).
 """
@@ -40,8 +42,7 @@ async def reconcile_once(svc: Services) -> dict:
                 await repo.add_event(row.device_uuid, row.tenant_id, "UNENROLLED", "reconciler", {"reason": reason})
             unenrolled.append(row.device_uuid)
             logger.warning("robot unenrolled by reconciler", extra={"device_uuid": row.device_uuid, "reason": reason})
-    pending = any(r.state in ("applying", "pending_acl") for r in rows)
-    applied = await enrollment.apply_acl(svc) if (unenrolled or pending) else None
+    applied = await enrollment.apply_acl(svc)
     return {"unenrolled": unenrolled, "applied": applied}
 
 
@@ -64,8 +65,8 @@ async def sync_locations_once(svc: Services, last_sync: dict, now: float | None 
         if not _valid(lat, lon):
             continue
         orion = svc.orion(tenant)
-        try:
-            await orion.update_entity_attrs(f"urn:ngsi-ld:ManufacturingMachine:{tenant}:{uuid}", {
+        try:  # POST /attrs: the twin is created without a location, and PATCH only updates existing ones
+            await orion.append_entity_attrs(f"urn:ngsi-ld:ManufacturingMachine:{tenant}:{uuid}", {
                 "location": {"type": "GeoProperty", "value": {"type": "Point", "coordinates": [lon, lat]}}})
             last_sync[(tenant, uuid)] = now
             written += 1

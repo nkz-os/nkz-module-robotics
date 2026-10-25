@@ -73,6 +73,14 @@ class EnrollmentRepo:
         )
         return _row(r) if r else None
 
+    async def set_state_if_unchanged(self, device_uuid: str, state: str, seen_updated_at: datetime) -> bool:
+        """Set the state only if the row was not modified since it was read (e.g. rotated meanwhile)."""
+        status = await self._conn.execute(
+            "UPDATE robot_enrollments SET state = $2, updated_at = now() WHERE device_uuid = $1 AND updated_at = $3",
+            device_uuid, state, seen_updated_at,
+        )
+        return status != "UPDATE 0"
+
     async def set_password(self, device_uuid: str, password_enc: bytes, actor: str) -> Enrollment | None:
         r = await self._conn.fetchrow(
             f"UPDATE robot_enrollments SET password_enc = $2, state = 'applying', rotated_at = now(), "

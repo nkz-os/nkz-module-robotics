@@ -47,7 +47,8 @@ async def test_reconcile_unenrolls_missing_or_moved_device(services):
     await _enroll(services, U1)
     await _enroll(services, U2)
     with respx.mock(assert_all_called=False) as r:
-        r.get(f"{VPN_URL}/api/vpn/internal/devices/{U1}").mock(return_value=httpx.Response(404))
+        r.get(f"{VPN_URL}/api/vpn/internal/devices/{U1}").mock(
+            return_value=httpx.Response(404, json={"detail": "Device not found"}))
         r.get(f"{VPN_URL}/api/vpn/internal/devices/{U2}").mock(
             return_value=httpx.Response(200, json=vpn(U2, tenant="tenant-b")))
         summary = await reconciler.reconcile_once(services)
@@ -80,7 +81,8 @@ def _telemetry(services, uuid, lat, lon, now):
 async def test_location_sync_is_throttled_and_validated(services):
     last: dict = {}
     with respx.mock(assert_all_called=False) as r:
-        patch = r.patch(url__regex=rf"{ORION_URL}/ngsi-ld/v1/entities/.*/attrs").mock(
+        # POST /attrs: the twin is created without a location, and PATCH only updates existing attributes
+        patch = r.post(url__regex=rf"{ORION_URL}/ngsi-ld/v1/entities/.*/attrs").mock(
             return_value=httpx.Response(204))
         _telemetry(services, U1, 42.5, -1.6, now=100.0)
         assert await reconciler.sync_locations_once(services, last, now=100.0) == 1

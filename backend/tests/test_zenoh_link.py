@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import time
 
 import pytest
 
@@ -49,26 +50,29 @@ async def test_listeners_only_get_their_robot():
 
 
 class FakePub:
-    def __init__(self, matching):
+    def __init__(self, matching, kwargs=None):
         self.matching_status = type("M", (), {"matching": matching})()
-        self.puts = []
+        self.puts, self.put_at, self.kwargs = [], [], kwargs or {}
 
     def put(self, payload):
         self.puts.append(payload)
+        self.put_at.append(time.monotonic())
 
 
 class FakeSession:
     def __init__(self, routers=("r",), matching=True):
         self.subs, self.pubs = {}, {}
-        self.info = type("I", (), {"routers_zid": lambda _self: list(routers)})()
+        self.routers = list(routers)
+        sess = self
+        self.info = type("I", (), {"routers_zid": lambda _self: list(sess.routers)})()
         self._matching = matching
         self.closed = False
 
     def declare_subscriber(self, key, cb):
         self.subs[key] = cb
 
-    def declare_publisher(self, key):
-        self.pubs[key] = FakePub(self._matching)
+    def declare_publisher(self, key, **kwargs):
+        self.pubs[key] = FakePub(self._matching, kwargs)
         return self.pubs[key]
 
     def close(self):
@@ -117,6 +121,52 @@ async def test_estop_without_router_raises_link_down():
     with pytest.raises(LinkDown):
         await link.estop(T, U1)
     await link.close()
+
+
+async def test_estop_is_sent_before_waiting_for_the_robot():
+    sess = FakeSession(matching=False)
+    link = await start_link(sess)
+    t0 = time.monotonic()
+    result = await link.estop(T, U1)
+    pub = sess.pubs[f"nkz/{T}/{U1}/safety/estop"]
+    assert pub.put_at[0] - t0 < 0.1   # no matching wait before the put
+    assert result.robot_connected is False and isinstance(result.sent_at, float)
+    await link.close()
+
+
+async def test_estop_publisher_is_reliable_and_urgent():
+    import zenoh
+
+    sess = FakeSession()
+    link = await start_link(sess)
+    await link.estop(T, U1)
+    kw = sess.pubs[f"nkz/{T}/{U1}/safety/estop"].kwargs
+    assert kw["congestion_control"] == zenoh.CongestionControl.BLOCK
+    assert kw["priority"] == zenoh.Priority.REAL_TIME
+    assert kw["express"] is True
+    await link.close()
+
+
+async def test_estop_checks_the_router_now_not_at_the_last_poll():
+    sess = FakeSession()
+    link = ZenohLink("tcp/router:7447", "robotics-api", "ps", LiveState(), session_factory=lambda: sess,
+                     poll_interval=30.0)
+    await link.start()
+    for _ in range(50):
+        if link.connected:
+            break
+        await asyncio.sleep(0.02)
+    sess.routers = []          # router gone; the poller will not notice for 30 s
+    with pytest.raises(LinkDown):
+        await link.estop(T, U1)
+    await link.close()
+
+
+def test_mode_carries_its_timestamp():
+    st = LiveState()
+    st.apply(f"nkz/{T}/{U1}/mode", b'{"value": "ESTOP"}', now=50.0)
+    snap = st.snapshot(st.get(T, U1), now=51.0)
+    assert snap["mode"] == "ESTOP" and snap["mode_at"] == 50.0
 
 
 async def test_estop_rejects_bad_ids():

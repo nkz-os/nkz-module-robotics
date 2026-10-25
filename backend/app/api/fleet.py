@@ -5,6 +5,7 @@ View and E-Stop: every role with access to the module — a safety stop is never
 restricted. Enroll / rotate / unenroll: TenantAdmin, PlatformAdmin.
 """
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -45,6 +46,7 @@ class EnrollmentOut(BaseModel):
 class EstopOut(BaseModel):
     published: bool
     robot_connected: bool
+    sent_at: float
 
 
 class EstopAllItem(EstopOut):
@@ -134,21 +136,25 @@ async def estop_robot(device_uuid: UUID, auth: AuthContext = Depends(_viewer), s
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Robot link is down; use the local E-Stop") from None
     logger.warning("E-Stop requested", extra={"device_uuid": str(device_uuid), "tenant_id": auth.tenant_id,
                                               "actor": auth.user_id})
-    return EstopOut(published=result.published, robot_connected=result.robot_connected)
+    return EstopOut(published=result.published, robot_connected=result.robot_connected, sent_at=result.sent_at)
 
 
 @router.post("/actions/estop-all", response_model=EstopAllOut)
 async def estop_all(auth: AuthContext = Depends(_viewer), svc: Services = Depends(get_services)):
     async with svc.db.tenant_tx(auth.tenant_id) as conn:
         rows = await EnrollmentRepo(conn).list_tenant()
+    # all robots at once: one unreachable robot must not delay the stop of the others
+    outcomes = await asyncio.gather(*(svc.link.estop(auth.tenant_id, row.device_uuid) for row in rows),
+                                    return_exceptions=True)
     results, failed = [], []
-    for row in rows:
-        try:
-            r = await svc.link.estop(auth.tenant_id, row.device_uuid)
-            results.append(EstopAllItem(device_uuid=row.device_uuid, published=r.published,
-                                        robot_connected=r.robot_connected))
-        except LinkDown:
+    for row, r in zip(rows, outcomes, strict=True):
+        if isinstance(r, LinkDown):
             failed.append(row.device_uuid)  # never folded into an "ok": the operator must see it
+        elif isinstance(r, BaseException):
+            raise r
+        else:
+            results.append(EstopAllItem(device_uuid=row.device_uuid, published=r.published,
+                                        robot_connected=r.robot_connected, sent_at=r.sent_at))
     logger.warning("E-Stop all requested", extra={"tenant_id": auth.tenant_id, "actor": auth.user_id,
                                                   "sent": len(results), "failed": len(failed)})
     if rows and not results:

@@ -21,6 +21,8 @@ export const FleetDashboard: React.FC<Props> = ({ onOpen }) => {
   const [enrolling, setEnrolling] = useState<{ robot: FleetRobot; mode: 'enroll' | 'rotate' } | null>(null);
   const [arming, setArming] = useState(false);
   const [allResult, setAllResult] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const estopAll = async () => {
     setArming(false);
@@ -32,8 +34,15 @@ export const FleetDashboard: React.FC<Props> = ({ onOpen }) => {
     }
   };
 
+  // Two steps: removing a robot cuts its platform link (and restarts the shared router).
   const unenroll = async (robot: FleetRobot) => {
-    await roboticsApi.unenroll(robot.device_uuid).catch(() => undefined);
+    setRemoving(null);
+    setRemoveError(null);
+    try {
+      await roboticsApi.unenroll(robot.device_uuid);
+    } catch (e: unknown) {
+      setRemoveError(t('fleet.unenrollFailed', { name: robot.name, status: e instanceof ApiError ? e.status : '—' }));
+    }
     refresh();
   };
 
@@ -64,6 +73,7 @@ export const FleetDashboard: React.FC<Props> = ({ onOpen }) => {
         </Inline>
       </Inline>
       {allResult && <span className="text-nkz-sm text-nkz-text-secondary">{allResult}</span>}
+      {removeError && <span className="text-nkz-sm text-nkz-danger">{removeError}</span>}
 
       {enrolling && (
         <EnrollRobot uuid={enrolling.robot.device_uuid} name={enrolling.robot.name} mode={enrolling.mode}
@@ -111,8 +121,16 @@ export const FleetDashboard: React.FC<Props> = ({ onOpen }) => {
                       <>
                         <Button size="sm" variant="ghost" leadingIcon={<KeyRound size={14} />}
                           onClick={() => setEnrolling({ robot, mode: 'rotate' })}>{t('fleet.rotate')}</Button>
-                        <Button size="sm" variant="ghost" leadingIcon={<Trash2 size={14} />}
-                          onClick={() => unenroll(robot)}>{t('fleet.unenroll')}</Button>
+                        {removing === robot.device_uuid ? (
+                          <>
+                            <Button size="sm" variant="danger" leadingIcon={<Trash2 size={14} />}
+                              onClick={() => unenroll(robot)}>{t('fleet.unenrollConfirm')}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setRemoving(null)}>{t('common.cancel')}</Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="ghost" leadingIcon={<Trash2 size={14} />}
+                            onClick={() => setRemoving(robot.device_uuid)}>{t('fleet.unenroll')}</Button>
+                        )}
                       </>
                     )}
                   </Inline>

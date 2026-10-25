@@ -4,7 +4,7 @@ import { useViewer } from '@nekazari/sdk';
 import { Badge, Inline, Stack } from '@nekazari/ui-kit';
 import { SlotShell } from '@nekazari/viewer-kit';
 import { useRobotStream } from '../../hooks/useRobotStream';
-import { heartbeatKey } from '../../lib/format';
+import { heartbeatKey, num } from '../../lib/format';
 import { EstopButton } from '../EstopButton';
 import { ModuleAttribution } from '../ModuleAttribution';
 
@@ -19,9 +19,9 @@ const RobotLive: React.FC<{ uuid: string }> = ({ uuid }) => {
       <Inline gap="inline" wrap>
         <Badge intent={live?.online ? 'positive' : 'default'}>{t(hb.key, { n: 'n' in hb ? hb.n : 0 })}</Badge>
         {live?.mode && <Badge intent="info">{t(`mode.${live.mode}`)}</Badge>}
-        {live?.telemetry && <Badge>{`${Math.round(live.telemetry.battery_pct)} %`}</Badge>}
+        {live?.telemetry && <Badge>{`${num(live.telemetry.battery_pct, 0)} %`}</Badge>}
       </Inline>
-      <EstopButton uuid={uuid} mode={live?.mode ?? null} />
+      <EstopButton uuid={uuid} live={live} />
     </Stack>
   );
 };

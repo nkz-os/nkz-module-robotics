@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Button, Inline, Stack } from '@nekazari/ui-kit';
 import { OctagonX } from 'lucide-react';
 import { ApiError, roboticsApi } from '../services/roboticsApi';
-import type { EstopOut, RobotMode } from '../types/robotics';
+import type { EstopOut, LiveState } from '../types/robotics';
 import { estopView } from '../lib/format';
 
 /** Two-step E-Stop for one robot. Shown as done only when the robot reports ESTOP. */
-export const EstopButton: React.FC<{ uuid: string; mode: RobotMode | null }> = ({ uuid, mode }) => {
+export const EstopButton: React.FC<{ uuid: string; live: LiveState | null }> = ({ uuid, live }) => {
   const { t } = useTranslation('robotics');
   const [arming, setArming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,7 +27,7 @@ export const EstopButton: React.FC<{ uuid: string; mode: RobotMode | null }> = (
     }
   };
 
-  const view = estopView(result, mode);
+  const view = estopView(result, live);
   return (
     <Stack gap="tight">
       {arming ? (

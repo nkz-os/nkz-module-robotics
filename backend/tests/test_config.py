@@ -15,6 +15,7 @@ REQUIRED = {
     "ROBOTICS_CREDENTIAL_KEY": "k" * 44,
     "JWKS_URL": "http://kc/certs",
     "JWT_ISSUER": "http://kc/realms/x",
+    "CORS_ORIGINS": "https://app.example.test",
 }
 
 
@@ -33,9 +34,26 @@ def test_validate_required_lists_all_missing(clean_env):
 
 
 def test_validate_required_passes_with_all_set(clean_env):
+    import nkz_platform_sdk.auth as sdk_auth
+
     for k, v in REQUIRED.items():
         clean_env.setenv(k, v)
+    clean_env.setattr(sdk_auth, "REQUIRE_HMAC", True)
+    clean_env.setattr(sdk_auth, "HMAC_SECRET", "hmac")
     Settings(_env_file=None).validate_required()
+
+
+def test_signature_check_must_be_on_in_the_sdk(clean_env):
+    # the SDK reads REQUIRE_HMAC_SIGNATURE itself; with it unset the gateway signature is never checked
+    import nkz_platform_sdk.auth as sdk_auth
+
+    for k, v in REQUIRED.items():
+        clean_env.setenv(k, v)
+    clean_env.setattr(sdk_auth, "REQUIRE_HMAC", False)
+    clean_env.setattr(sdk_auth, "HMAC_SECRET", "hmac")
+    with pytest.raises(RuntimeError) as exc:
+        Settings(_env_file=None).validate_required()
+    assert "REQUIRE_HMAC_SIGNATURE" in str(exc.value)
 
 
 def test_database_url_alias(clean_env):

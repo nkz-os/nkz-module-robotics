@@ -83,3 +83,17 @@ async def test_events_never_carry_another_robot(services):
 
 async def _false():
     return False
+
+
+async def test_keepalive_carries_fresh_state(services):
+    import time as _t
+
+    services.link.state.apply(f"nkz/acme/{U1}/heartbeat", b'{"ts": 1, "robot_id": "x", "vitals_age_ms": 1}',
+                              now=_t.time() - 20)   # robot silent for 20 s
+    gen = stream_events(services, "acme", U1, lambda: _false(), keepalive=0.05)
+    await gen.__anext__()            # link
+    await gen.__anext__()            # initial state
+    tick = await gen.__anext__()     # no new sample: the keepalive must still say the robot is offline
+    await gen.aclose()
+    assert tick.startswith(b"event: state")
+    assert json.loads(tick.split(b"data: ")[1])["online"] is False

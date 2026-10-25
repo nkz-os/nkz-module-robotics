@@ -44,7 +44,7 @@ def json5_to_json(text: str) -> str:
     return text
 
 
-def _check(robot: RobotCred) -> None:
+def check_robot(robot: RobotCred) -> None:
     if not _UUID.match(robot.device_uuid):
         raise ValueError(f"robot username must be a lowercase UUID: {robot.device_uuid!r}")
     if not _TENANT.match(robot.tenant_id):
@@ -56,7 +56,7 @@ def _check(robot: RobotCred) -> None:
 def render(robots: list[RobotCred], service_user: str, service_password: str) -> AclBundle:
     robots = sorted(robots, key=lambda r: r.device_uuid)
     for robot in robots:
-        _check(robot)
+        check_robot(robot)
     lines = [f"{service_user}:{service_password}"] + [f"{r.device_uuid}:{r.password}" for r in robots]
 
     rules = [{"id": "service-all", "messages": ["put", "declare_subscriber"], "flows": ["ingress", "egress"],

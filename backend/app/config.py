@@ -73,9 +73,16 @@ class Settings(BaseSettings):
             "ROBOTICS_CREDENTIAL_KEY": self.credential_key,
             "JWKS_URL": self.jwks_url,
             "JWT_ISSUER": self.jwt_issuer,
+            "CORS_ORIGINS": self.cors_origins,  # also the Origin allowlist of the stream: empty = every 403
         }
         if self.require_hmac_signature:
-            required["HMAC_SECRET"] = self.hmac_secret
+            # require_auth reads these from the SDK module, which parses the environment itself:
+            # check what it will actually enforce, not this model's copy.
+            import nkz_platform_sdk.auth as sdk_auth
+
+            required["HMAC_SECRET"] = self.hmac_secret and sdk_auth.HMAC_SECRET
+            if not sdk_auth.REQUIRE_HMAC:
+                required["REQUIRE_HMAC_SIGNATURE=true"] = ""
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError("Missing required configuration: " + ", ".join(missing))

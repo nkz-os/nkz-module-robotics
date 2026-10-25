@@ -32,14 +32,17 @@ class FakeCore:
 
 
 class FakeApps:
-    def __init__(self, ready=True):
-        self.patches, self.ready = [], ready
+    def __init__(self, ready=True, template_digest=None):
+        self.patches, self.ready, self.template_digest = [], ready, template_digest
 
     def patch_namespaced_deployment(self, name, namespace, body):
         self.patches.append(body)
+        self.template_digest = body["spec"]["template"]["metadata"]["annotations"][DIGEST_ANNOTATION]
 
     def read_namespaced_deployment(self, name, namespace):
-        spec = type("S", (), {"replicas": 1})()
+        ann = {DIGEST_ANNOTATION: self.template_digest} if self.template_digest else {}
+        tmpl = type("T", (), {"metadata": type("TM", (), {"annotations": ann})()})()
+        spec = type("S", (), {"replicas": 1, "template": tmpl})()
         st = type("St", (), {"observed_generation": 2, "updated_replicas": 1 if self.ready else 0,
                              "available_replicas": 1 if self.ready else 0, "replicas": 1})()
         md = type("M", (), {"generation": 2})()
@@ -65,7 +68,7 @@ async def test_creates_secret_and_restarts_router():
 
 async def test_same_bundle_is_a_noop():
     core = FakeCore(FakeSecret({}, {DIGEST_ANNOTATION: BUNDLE.digest}))
-    apps = FakeApps()
+    apps = FakeApps(template_digest=BUNDLE.digest)
     assert await applier(core, apps).apply(BUNDLE) is False
     assert core.calls == [] and apps.patches == []
 
@@ -80,3 +83,12 @@ async def test_changed_bundle_replaces_and_restarts():
 async def test_wait_ready():
     assert await applier(FakeCore(), FakeApps(ready=True)).wait_ready(timeout=1) is True
     assert await applier(FakeCore(), FakeApps(ready=False)).wait_ready(timeout=1, interval=0.2) is False
+
+
+async def test_secret_written_but_restart_missed_is_repaired():
+    # A previous apply wrote the Secret, then failed before restarting the router:
+    # the router still runs the old config, so the restart must happen now.
+    core = FakeCore(FakeSecret({}, {DIGEST_ANNOTATION: BUNDLE.digest}))
+    apps = FakeApps(template_digest="old")
+    assert await applier(core, apps).apply(BUNDLE) is True
+    assert core.calls == [] and len(apps.patches) == 1

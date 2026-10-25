@@ -93,13 +93,21 @@ def gateway_headers(tenant: str = "acme", roles: str = "TenantAdmin", user: str 
 class FakeApplier:
     def __init__(self, ok: bool = True):
         self.bundles, self.ok = [], ok
+        self.fail_next = False   # the next apply raises (Kubernetes API failure)
+        self.during_wait = None  # coroutine run while "waiting" for the rollout
 
     async def apply(self, bundle):
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("kubernetes api unavailable")
         changed = not self.bundles or self.bundles[-1].digest != bundle.digest
         self.bundles.append(bundle)
         return changed
 
     async def wait_ready(self, timeout: float = 120.0, interval: float = 2.0):
+        if self.during_wait is not None:
+            hook, self.during_wait = self.during_wait, None
+            await hook()
         return self.ok
 
 
@@ -111,14 +119,19 @@ class FakeLink:
         self.connected = True
         self.estops: list[tuple[str, str]] = []
         self.robot_connected = True
+        self.delay = 0.0
 
     async def estop(self, tenant_id, device_uuid):
+        import time
+
         from app.services.zenoh_link import EstopResult, LinkDown
 
         if not self.connected:
             raise LinkDown("down")
+        if self.delay:
+            await asyncio.sleep(self.delay)
         self.estops.append((tenant_id, device_uuid))
-        return EstopResult(published=True, robot_connected=self.robot_connected)
+        return EstopResult(published=True, robot_connected=self.robot_connected, sent_at=time.time())
 
 
 @pytest.fixture(autouse=True)
@@ -136,7 +149,8 @@ def settings():
     return Settings(_env_file=None, vpn_internal_url=VPN_URL, internal_service_secret="internal-secret",
                     zenoh_router_endpoint="tcp/zenoh.test:7447", zenoh_robot_endpoint="tcp/192.0.2.10:7447",
                     zenoh_service_password="svc-pass", credential_key=Fernet.generate_key().decode(),
-                    jwks_url="http://kc.test/certs", jwt_issuer="http://kc.test/realms/x")
+                    jwks_url="http://kc.test/certs", jwt_issuer="http://kc.test/realms/x",
+                    cors_origins="https://app.example.test")
 
 
 @pytest.fixture

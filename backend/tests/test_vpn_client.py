@@ -36,3 +36,11 @@ async def test_other_failures_raise_unavailable():
     respx.get(URL).mock(side_effect=httpx.ConnectError("down"))
     with pytest.raises(VpnUnavailable):
         await VpnClient(BASE, "s3").get_device(U)
+
+
+@respx.mock
+async def test_generic_404_is_not_a_missing_device():
+    # a misrouted URL answers 404 too; treating it as "device gone" would unenroll the whole fleet
+    respx.get(URL).mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+    with pytest.raises(VpnUnavailable):
+        await VpnClient(BASE, "s3").get_device(U)

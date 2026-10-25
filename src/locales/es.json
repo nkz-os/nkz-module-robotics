@@ -11,7 +11,9 @@
     "open": "Abrir",
     "enroll": "Inscribir",
     "rotate": "Nueva contraseña",
-    "unenroll": "Quitar"
+    "unenroll": "Quitar",
+    "unenrollConfirm": "Confirmar: quitar el enlace del robot con la plataforma",
+    "unenrollFailed": "No se pudo quitar {{name}} (error {{status}})."
   },
   "enrollment": {
     "none": "Sin inscribir",
@@ -55,7 +57,8 @@
     "online": "En línea",
     "staleFor": "Sin datos desde hace {{n}} s",
     "linkUp": "Enlace con la plataforma activo",
-    "linkDown": "Enlace con la plataforma caído"
+    "linkDown": "Enlace con la plataforma caído",
+    "linkUnknown": "Conectando…"
   },
   "mode": {
     "MANUAL": "Manual",

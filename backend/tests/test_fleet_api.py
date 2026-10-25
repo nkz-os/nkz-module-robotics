@@ -130,7 +130,8 @@ async def test_estop_any_role_exact_target(api, services, mocks):
     await enroll(api)
     r = await api.post(f"/api/robotics/fleet/robots/{U1}/estop", headers=FARMER)
     assert r.status_code == 200
-    assert r.json() == {"published": True, "robot_connected": True}
+    body = r.json()
+    assert (body["published"], body["robot_connected"]) == (True, True)
     assert services.link.estops == [("acme", U1)]
 
 
@@ -182,3 +183,67 @@ async def test_openapi_has_no_teleoperation_routes(api):
     assert not any("control" in p or "zenoh-config" in p or "provision" in p for p in paths)
     assert "/api/robotics/fleet/robots/{device_uuid}/estop" in paths
     assert json.dumps(paths).count("cmd_vel") == 0
+
+
+async def test_reconciler_reapplies_after_failed_unenroll_apply(api, services, mocks):
+    from app.services import reconciler
+
+    await enroll(api)
+    await drain(services)
+    services.applier.fail_next = True
+    assert (await api.delete(f"/api/robotics/fleet/robots/{U1}/enrollment", headers=ADMIN)).status_code == 204
+    await drain(services)
+    assert U1 in services.applier.bundles[-1].credentials_txt  # the router still has the revoked robot
+    await reconciler.reconcile_once(services)
+    assert U1 not in services.applier.bundles[-1].credentials_txt
+
+
+async def test_rotate_during_apply_is_not_marked_active(api, services, db, mocks):
+    from app.services import enrollment
+
+    await enroll(api)
+    await drain(services)
+
+    async def rotate_meanwhile():
+        async with db.tenant_tx("acme") as conn:
+            await EnrollmentRepo(conn).set_password(U1, services.box.encrypt("newer-password"), "u2")
+
+    services.applier.during_wait = rotate_meanwhile
+    await enrollment.apply_acl(services)  # snapshot taken before the rotation
+    async with db.platform_tx() as conn:
+        assert (await EnrollmentRepo(conn).get(U1)).state == "applying"
+    await enrollment.apply_acl(services)
+    async with db.platform_tx() as conn:
+        assert (await EnrollmentRepo(conn).get(U1)).state == "active"
+
+
+async def test_background_apply_failure_is_logged(api, services, mocks, caplog, monkeypatch):
+    from app.services import enrollment
+
+    async def boom(self):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(EnrollmentRepo, "list_all", boom)
+    caplog.set_level(logging.ERROR)
+    enrollment.schedule_apply(services)
+    await drain(services)
+    assert "zenoh-acl apply failed" in caplog.text
+
+
+async def test_estop_all_runs_concurrently(api, services, mocks):
+    import time
+
+    await enroll(api, U1)
+    await enroll(api, U2)
+    await drain(services)
+    services.link.delay = 0.3
+    t0 = time.monotonic()
+    r = await api.post("/api/robotics/fleet/actions/estop-all", headers=FARMER)
+    assert r.status_code == 200 and len(r.json()["results"]) == 2
+    assert time.monotonic() - t0 < 0.5
+
+
+async def test_estop_reports_sent_at(api, services, mocks):
+    await enroll(api)
+    body = (await api.post(f"/api/robotics/fleet/robots/{U1}/estop", headers=FARMER)).json()
+    assert isinstance(body["sent_at"], float)

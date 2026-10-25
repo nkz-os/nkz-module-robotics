@@ -43,6 +43,7 @@ class RobotLive:
     heartbeat_at: float | None = None
     vitals_age_ms: int | None = None
     mode: str | None = None
+    mode_at: float | None = None
     updated_at: float = 0.0
 
 
@@ -50,6 +51,7 @@ class RobotLive:
 class EstopResult:
     published: bool
     robot_connected: bool
+    sent_at: float  # server clock; the robot's ESTOP counts as confirmation only if reported after this
 
 
 @dataclass
@@ -80,7 +82,7 @@ class LiveState:
             age = data.get("vitals_age_ms")
             robot.vitals_age_ms = age if isinstance(age, int) else None
         elif data.get("value") in VALID_MODES:
-            robot.mode = data["value"]
+            robot.mode, robot.mode_at = data["value"], now
         else:
             return
         robot.updated_at = now
@@ -93,7 +95,8 @@ class LiveState:
         now = time.time() if now is None else now
         age = round(now - robot.heartbeat_at, 1) if robot.heartbeat_at is not None else None
         return {"online": age is not None and age <= ONLINE_WINDOW_S, "heartbeat_age_s": age,
-                "vitals_age_ms": robot.vitals_age_ms, "mode": robot.mode, "telemetry": robot.telemetry}
+                "vitals_age_ms": robot.vitals_age_ms, "mode": robot.mode, "mode_at": robot.mode_at,
+                "telemetry": robot.telemetry}
 
     def subscribe(self, tenant_id: str, device_uuid: str) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=100)
@@ -187,25 +190,37 @@ class ZenohLink:
         if not self.connected or self._session is None:
             raise LinkDown("zenoh router not reachable")
         key = f"nkz/{tenant_id}/{device_uuid}/safety/estop"
+        session = self._session
 
-        def publish() -> bool:
+        def publish() -> tuple[bool, float]:
+            # the poller may be up to one interval stale: ask the session now
+            if not list(session.info.routers_zid()):
+                raise LinkDown("zenoh router not reachable")
             pub = self._publishers.get(key)
-            if pub is None:
-                pub = self._publishers[key] = self._session.declare_publisher(key)
+            fresh = pub is None
+            if fresh:
+                import zenoh
+
+                pub = self._publishers[key] = session.declare_publisher(
+                    key, congestion_control=zenoh.CongestionControl.BLOCK, priority=zenoh.Priority.REAL_TIME,
+                    express=True)
+            sent_at = time.time()
+            pub.put(ESTOP_PAYLOAD)  # send first; whether the robot listens is only reported
+            if fresh:
                 deadline = time.monotonic() + 0.5  # matching status propagates shortly after declaring
                 while not pub.matching_status.matching and time.monotonic() < deadline:
                     time.sleep(0.05)
-            connected = bool(pub.matching_status.matching)
-            pub.put(ESTOP_PAYLOAD)
-            return connected
+            return bool(pub.matching_status.matching), sent_at
 
         try:
-            robot_connected = await asyncio.to_thread(publish)
+            robot_connected, sent_at = await asyncio.to_thread(publish)
+        except LinkDown:
+            raise
         except Exception as exc:
             raise LinkDown(type(exc).__name__) from None
         logger.warning("E-Stop sent", extra={"tenant_id": tenant_id, "device_uuid": device_uuid,
                                              "robot_connected": robot_connected})
-        return EstopResult(published=True, robot_connected=robot_connected)
+        return EstopResult(published=True, robot_connected=robot_connected, sent_at=sent_at)
 
     async def close(self) -> None:
         if self._task:

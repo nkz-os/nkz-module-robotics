@@ -1,7 +1,9 @@
 """
 Push the rendered ACL to the router: Secret `zenoh-acl` (not managed by ArgoCD)
 plus a digest annotation on the router's pod template, which restarts it.
-Nothing is written, and the router is not restarted, when the digest is unchanged.
+The Secret is written when its digest differs; the router is restarted when the
+digest on its pod template differs — that annotation, not the Secret, says what
+the router runs, so a restart missed after a write is repaired on the next apply.
 Blocking Kubernetes calls run in a thread.
 """
 
@@ -59,9 +61,12 @@ class AclApplier:
             core.create_namespaced_secret(self._ns, body)
         else:
             annotations = (current.metadata.annotations or {}) if current.metadata else {}
-            if annotations.get(DIGEST_ANNOTATION) == digest:
-                return False
-            core.replace_namespaced_secret(self._secret, self._ns, body)
+            if annotations.get(DIGEST_ANNOTATION) != digest:
+                core.replace_namespaced_secret(self._secret, self._ns, body)
+        deployment = apps.read_namespaced_deployment(self._deployment, self._ns)
+        template_md = deployment.spec.template.metadata if deployment.spec.template else None
+        if ((template_md.annotations or {}) if template_md else {}).get(DIGEST_ANNOTATION) == digest:
+            return False
         apps.patch_namespaced_deployment(self._deployment, self._ns, {
             "spec": {"template": {"metadata": {"annotations": {DIGEST_ANNOTATION: digest}}}}})
         return True

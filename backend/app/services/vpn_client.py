@@ -31,7 +31,15 @@ class VpnClient:
         except httpx.HTTPError as exc:
             raise VpnUnavailable(type(exc).__name__) from None
         if r.status_code == 404:
-            return None
+            # only vpn's own answer means the device is gone; any other 404 (a misrouted URL)
+            # is an outage, or the reconciler would unenroll every robot in one cycle
+            try:
+                detail = r.json().get("detail")
+            except ValueError:
+                detail = None
+            if detail == "Device not found":
+                return None
+            raise VpnUnavailable("HTTP 404 from an unexpected route")
         if r.status_code != 200:
             raise VpnUnavailable(f"HTTP {r.status_code}")
         d = r.json()

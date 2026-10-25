@@ -17,11 +17,12 @@ from app.db.repo import AlreadyEnrolled, EnrollmentRepo
 from app.deps import Services
 from app.services.credentials import new_password
 from app.services.vpn_client import VpnUnavailable
-from app.services.zenoh_acl import RobotCred, render
+from app.services.zenoh_acl import RobotCred, check_robot, render
 
 logger = logging.getLogger(__name__)
 
 _apply_lock = asyncio.Lock()
+READY_CHECK_S = 15.0  # router already on this config: only confirm it is up
 
 
 @dataclass(frozen=True)
@@ -88,10 +89,17 @@ async def unenroll(svc: Services, *, tenant_id: str | None, device_uuid: str, ac
     return True
 
 
+def _log_failure(task: asyncio.Task) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        exc = task.exception()
+        logger.error("zenoh-acl apply failed: %s", type(exc).__name__, exc_info=exc)
+
+
 def schedule_apply(svc: Services) -> None:
     task = asyncio.create_task(apply_acl(svc), name="zenoh-acl-apply")
     svc.background.add(task)
     task.add_done_callback(svc.background.discard)
+    task.add_done_callback(_log_failure)
 
 
 async def apply_acl(svc: Services) -> bool:
@@ -102,13 +110,17 @@ async def apply_acl(svc: Services) -> bool:
         robots = []
         for row in rows:
             try:
-                robots.append(RobotCred(row.device_uuid, row.tenant_id, svc.box.decrypt(row.password_enc)))
-            except ValueError:  # undecryptable (wrong key): leave the robot out, flag it
-                logger.error("enrollment credential cannot be decrypted", extra={"device_uuid": row.device_uuid})
+                robot = RobotCred(row.device_uuid, row.tenant_id, svc.box.decrypt(row.password_enc))
+                check_robot(robot)
+            except ValueError:  # undecryptable (wrong key) or unrenderable: leave the robot out, flag it
+                logger.error("enrollment credential unusable",
+                             extra={"device_uuid": row.device_uuid, "tenant_id": row.tenant_id})
+                continue
+            robots.append(robot)
         bundle = render(robots, svc.settings.zenoh_service_user, svc.settings.zenoh_service_password)
         try:
             restarted = await svc.applier.apply(bundle)
-            ok = await svc.applier.wait_ready() if restarted else True
+            ok = await (svc.applier.wait_ready() if restarted else svc.applier.wait_ready(timeout=READY_CHECK_S))
         except Exception as exc:  # Kubernetes API failure: retried by the reconciler
             logger.error("router config apply failed: %s", type(exc).__name__)
             ok = False
@@ -118,5 +130,7 @@ async def apply_acl(svc: Services) -> bool:
             repo = EnrollmentRepo(conn)
             for row in rows:
                 if row.state in ("applying", "pending_acl"):
-                    await repo.set_state(row.device_uuid, new_state if row.device_uuid in applied else "failed")
+                    # rows changed since the snapshot (rotated) keep their state for the next apply
+                    await repo.set_state_if_unchanged(
+                        row.device_uuid, new_state if row.device_uuid in applied else "failed", row.updated_at)
         return ok

@@ -20,7 +20,8 @@ export interface LiveState {
   heartbeat_age_s: number | null;
   vitals_age_ms: number | null;
   mode: RobotMode | null;
-  telemetry: RobotTelemetry | null;
+  mode_at: number | null;
+  telemetry: Partial<RobotTelemetry> | null;
 }
 
 export interface FleetRobot {
@@ -51,6 +52,7 @@ export interface EnrollOut {
 export interface EstopOut {
   published: boolean;
   robot_connected: boolean;
+  sent_at: number;
 }
 
 export interface EstopAllOut {
